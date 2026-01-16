@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { AllUsersData, AppState, QuizResult, PracticeSettings, UserData, FrayerModelData, SessionSummaryData, SessionTimingData } from './types';
+import { AllUsersData, AppState, QuizResult, PracticeSettings, UserData, FrayerModelData, SessionSummaryData, SessionTimingData, WordListProgress } from './types';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import Dashboard from './components/Dashboard';
 import Welcome from './components/Welcome';
@@ -14,7 +14,7 @@ import { ThemeProvider } from './components/ThemeContext';
 
 const App: React.FC = () => {
   const [allUsersData, setAllUsersData] = useLocalStorage<AllUsersData>('taaltrekkers-data-v2', {});
-  
+
   const [appState, setAppState] = useState<AppState>(AppState.Welcome);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [practiceWords, setPracticeWords] = useState<string[]>([]);
@@ -34,13 +34,13 @@ const App: React.FC = () => {
 
         // 1. Voeg eerst de echte woorden toe
         SCHOOLTAAL_WORDS.forEach(word => {
-            if (!learnedWordsObject[word.toLowerCase()]) {
-                learnedWordsObject[word.toLowerCase()] = {
-                    definitie: `Definitie van ${word}`,
-                    correct: 1,
-                    incorrect: 0
-                };
-            }
+          if (!learnedWordsObject[word.toLowerCase()]) {
+            learnedWordsObject[word.toLowerCase()] = {
+              definitie: `Definitie van ${word}`,
+              correct: 1,
+              incorrect: 0
+            };
+          }
         });
 
         // 2. Vul aan met dummy data tot we boven de threshold zitten
@@ -48,25 +48,25 @@ const App: React.FC = () => {
         const needed = STORY_MODE_UNLOCK_THRESHOLD - currentCount + 50;
 
         for (let i = 0; i < needed; i++) {
-            const dummyWord = `test_woord_${i}`;
-            learnedWordsObject[dummyWord] = {
-                definitie: `Dit is een automatisch gegenereerd testwoord nummer ${i}`,
-                correct: 5,
-                incorrect: 0
-            };
+          const dummyWord = `test_woord_${i}`;
+          learnedWordsObject[dummyWord] = {
+            definitie: `Dit is een automatisch gegenereerd testwoord nummer ${i}`,
+            correct: 5,
+            incorrect: 0
+          };
         }
 
         const updatedTestUser: UserData = {
-            ...(testUserData || { sessionHistory: [], streak: 0, lastPracticeDate: null, points: 0, avatarId: 'default' }),
-            learnedWords: learnedWordsObject,
-            masteredWords: Object.keys(learnedWordsObject).length,
-            totalScore: testUserData?.totalScore || 5000, // Geef ook wat punten voor avatars
-            points: testUserData?.points || 5000,
+          ...(testUserData || { sessionHistory: [], streak: 0, lastPracticeDate: null, points: 0, avatarId: 'default' }),
+          learnedWords: learnedWordsObject,
+          masteredWords: Object.keys(learnedWordsObject).length,
+          totalScore: testUserData?.totalScore || 5000, // Geef ook wat punten voor avatars
+          points: testUserData?.points || 5000,
         };
 
         return {
-            ...prevData,
-            [testUserKey]: updatedTestUser,
+          ...prevData,
+          [testUserKey]: updatedTestUser,
         };
       }
       return prevData;
@@ -84,93 +84,115 @@ const App: React.FC = () => {
     if (!currentUser || !practiceWords || !practiceSettings) return;
 
     setAllUsersData(prevData => {
-        const userToUpdate = prevData[currentUser] || {
-            masteredWords: 0,
-            totalScore: 0,
-            sessionHistory: [],
-            learnedWords: {},
-            streak: 0,
-            lastPracticeDate: null,
-            points: 0,
-            avatarId: 'default'
-        };
+      const userToUpdate = prevData[currentUser] || {
+        masteredWords: 0,
+        totalScore: 0,
+        sessionHistory: [],
+        learnedWords: {},
+        streak: 0,
+        lastPracticeDate: null,
+        points: 0,
+        avatarId: 'default',
+        wordListProgress: {}
+      };
 
-        const newSession: UserData['sessionHistory'][0] = {
-            date: new Date().toISOString(),
-            score: sessionScore,
-            words: practiceWords,
-            quizResults: quizResults,
-            settings: practiceSettings,
-            studyMode: studyMode,
-            timingData: timingData,
-        };
-        
-        const updatedHistory = [newSession, ...userToUpdate.sessionHistory];
-        const updatedLearnedWords = { ...(userToUpdate.learnedWords || {}) };
+      const newSession: UserData['sessionHistory'][0] = {
+        date: new Date().toISOString(),
+        score: sessionScore,
+        words: practiceWords,
+        quizResults: quizResults,
+        settings: practiceSettings,
+        studyMode: studyMode,
+        timingData: timingData,
+      };
 
-        frayerModels.forEach((model, index) => {
-            const wordKey = practiceWords[index].toLowerCase();
-            if (!updatedLearnedWords[wordKey] && model.definitie) {
-                updatedLearnedWords[wordKey] = {
-                    definitie: model.definitie,
-                    correct: 0,
-                    incorrect: 0
-                };
-            }
-        });
+      const updatedHistory = [newSession, ...userToUpdate.sessionHistory];
+      const updatedLearnedWords = { ...(userToUpdate.learnedWords || {}) };
 
-        quizResults.forEach(result => {
-            const wordKey = result.word.toLowerCase();
-            const wordInfo = updatedLearnedWords[wordKey];
-            if (wordInfo) {
-                if (result.correct) {
-                    wordInfo.correct += 1;
-                } else {
-                    wordInfo.incorrect += 1;
-                }
-            }
-        });
-        
-        // --- GAMIFICATION LOGIC ---
-        const today = new Date().toISOString().split('T')[0];
-        const lastDate = userToUpdate.lastPracticeDate ? userToUpdate.lastPracticeDate.split('T')[0] : null;
-        let newStreak = userToUpdate.streak || 0;
-
-        if (lastDate !== today) {
-            if (lastDate) {
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                const yesterdayString = yesterday.toISOString().split('T')[0];
-                
-                if (lastDate === yesterdayString) {
-                    newStreak += 1;
-                } else {
-                    newStreak = 1; // Reset streak if missed a day
-                }
-            } else {
-                newStreak = 1; // First time ever
-            }
+      frayerModels.forEach((model, index) => {
+        const wordKey = practiceWords[index].toLowerCase();
+        if (!updatedLearnedWords[wordKey] && model.definitie) {
+          updatedLearnedWords[wordKey] = {
+            definitie: model.definitie,
+            correct: 0,
+            incorrect: 0
+          };
         }
+      });
 
-        const newPoints = (userToUpdate.points || 0) + sessionScore;
-        
-        const updatedUser: UserData = {
-            masteredWords: Object.keys(updatedLearnedWords).length,
-            totalScore: userToUpdate.totalScore + sessionScore,
-            sessionHistory: updatedHistory,
-            learnedWords: updatedLearnedWords,
-            streak: newStreak,
-            lastPracticeDate: new Date().toISOString(),
-            points: newPoints,
-            avatarId: userToUpdate.avatarId || 'default'
-        };
-        
-        return {
-            ...prevData,
-            [currentUser]: updatedUser,
-        };
+      quizResults.forEach(result => {
+        const wordKey = result.word.toLowerCase();
+        const wordInfo = updatedLearnedWords[wordKey];
+        if (wordInfo) {
+          if (result.correct) {
+            wordInfo.correct += 1;
+          } else {
+            wordInfo.incorrect += 1;
+          }
+        }
+      });
+
+      // --- GAMIFICATION LOGIC ---
+      const today = new Date().toISOString().split('T')[0];
+      const lastDate = userToUpdate.lastPracticeDate ? userToUpdate.lastPracticeDate.split('T')[0] : null;
+      let newStreak = userToUpdate.streak || 0;
+
+      if (lastDate !== today) {
+        if (lastDate) {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayString = yesterday.toISOString().split('T')[0];
+
+          if (lastDate === yesterdayString) {
+            newStreak += 1;
+          } else {
+            newStreak = 1; // Reset streak if missed a day
+          }
+        } else {
+          newStreak = 1; // First time ever
+        }
+      }
+
+      const newPoints = (userToUpdate.points || 0) + sessionScore;
+
+      // --- WORD LIST PROGRESS TRACKING ---
+      const listId = practiceSettings.customFileName || practiceSettings.context || 'general';
+      const existingListProgress = userToUpdate.wordListProgress?.[listId];
+
+      // Merge praktische woorden (lowercase) met bestaande geoefende woorden
+      const newPracticedWords = new Set<string>([
+        ...(existingListProgress?.practicedWords || []),
+        ...practiceWords.map(w => w.toLowerCase())
+      ]);
+
+      const updatedListProgress: WordListProgress = {
+        listId,
+        allWords: existingListProgress?.allWords || practiceWords,
+        practicedWords: Array.from(newPracticedWords),
+        lastPracticed: new Date().toISOString()
+      };
+
+      const updatedUser: UserData = {
+        masteredWords: Object.keys(updatedLearnedWords).length,
+        totalScore: userToUpdate.totalScore + sessionScore,
+        sessionHistory: updatedHistory,
+        learnedWords: updatedLearnedWords,
+        streak: newStreak,
+        lastPracticeDate: new Date().toISOString(),
+        points: newPoints,
+        avatarId: userToUpdate.avatarId || 'default',
+        wordListProgress: {
+          ...(userToUpdate.wordListProgress || {}),
+          [listId]: updatedListProgress
+        }
+      };
+
+      return {
+        ...prevData,
+        [currentUser]: updatedUser,
+      };
     });
-    
+
     setSessionSummaryData({
       score: sessionScore,
       quizResults: quizResults,
@@ -180,32 +202,32 @@ const App: React.FC = () => {
     setAppState(AppState.SessionSummary);
 
   }, [setAllUsersData, currentUser, practiceWords, practiceSettings]);
-  
+
   const showDashboard = useCallback(() => {
     setAppState(AppState.Dashboard);
   }, []);
-  
+
   const showWelcome = useCallback(() => {
     setAppState(AppState.Welcome);
   }, []);
 
   const deleteSession = useCallback((userName: string, sessionDate: string) => {
-      setAllUsersData(prevData => {
-          const userToUpdate = prevData[userName];
-          if (!userToUpdate) return prevData;
+    setAllUsersData(prevData => {
+      const userToUpdate = prevData[userName];
+      if (!userToUpdate) return prevData;
 
-          const updatedHistory = userToUpdate.sessionHistory.filter(session => session.date !== sessionDate);
-          
-          const updatedUser = {
-              ...userToUpdate,
-              sessionHistory: updatedHistory,
-          };
+      const updatedHistory = userToUpdate.sessionHistory.filter(session => session.date !== sessionDate);
 
-          return {
-              ...prevData,
-              [userName]: updatedUser,
-          };
-      });
+      const updatedUser = {
+        ...userToUpdate,
+        sessionHistory: updatedHistory,
+      };
+
+      return {
+        ...prevData,
+        [userName]: updatedUser,
+      };
+    });
   }, [setAllUsersData]);
 
   const startStoryChallenge = useCallback((userName: string, aiModel: PracticeSettings['aiModel']) => {
@@ -214,21 +236,21 @@ const App: React.FC = () => {
 
     // Filter out dummy words for the story challenge to ensure quality
     const learnedWordsList = Object.keys(user.learnedWords).filter(w => !w.startsWith('test_woord_'));
-    
+
     // If user ONLY has dummy words (edge case), allow dummy words but warn
     const wordsPool = learnedWordsList.length > 5 ? learnedWordsList : Object.keys(user.learnedWords);
 
     const storyWordsSample = [...wordsPool].sort(() => 0.5 - Math.random()).slice(0, 15);
-    
+
     if (storyWordsSample.length < 5) {
-        alert("Je hebt nog niet genoeg verschillende woorden geleerd voor de verhaaluitdaging. Ga zo door!");
-        return;
+      alert("Je hebt nog niet genoeg verschillende woorden geleerd voor de verhaaluitdaging. Ga zo door!");
+      return;
     }
-    
+
     const storySettings: PracticeSettings = {
-        showSynonymsAntonyms: false,
-        wordsPerSession: storyWordsSample.length,
-        aiModel: aiModel,
+      showSynonymsAntonyms: false,
+      wordsPerSession: storyWordsSample.length,
+      aiModel: aiModel,
     };
 
     setCurrentUser(userName.toLowerCase().trim());
@@ -238,21 +260,21 @@ const App: React.FC = () => {
   }, [allUsersData]);
 
   const finishStoryChallenge = useCallback(() => {
-      setAppState(AppState.Welcome);
-      setCurrentUser(null);
-      setPracticeWords([]);
-      setPracticeSettings(null);
+    setAppState(AppState.Welcome);
+    setCurrentUser(null);
+    setPracticeWords([]);
+    setPracticeSettings(null);
   }, []);
-  
+
   const updateAvatar = useCallback((userName: string, avatarId: string) => {
-      setAllUsersData(prevData => {
-          const user = prevData[userName.toLowerCase().trim()];
-          if(!user) return prevData;
-          return {
-              ...prevData,
-              [userName.toLowerCase().trim()]: { ...user, avatarId }
-          };
-      });
+    setAllUsersData(prevData => {
+      const user = prevData[userName.toLowerCase().trim()];
+      if (!user) return prevData;
+      return {
+        ...prevData,
+        [userName.toLowerCase().trim()]: { ...user, avatarId }
+      };
+    });
   }, [setAllUsersData]);
 
   const handleCloseSummary = useCallback((destination: 'welcome' | 'dashboard') => {
@@ -261,23 +283,23 @@ const App: React.FC = () => {
     setPracticeWords([]);
     setPracticeSettings(null);
     if (destination === 'dashboard') {
-        setAppState(AppState.Dashboard);
+      setAppState(AppState.Dashboard);
     } else {
-        setAppState(AppState.Welcome);
+      setAppState(AppState.Welcome);
     }
   }, []);
 
   const handleLogoClick = useCallback(() => {
     const inProgress = appState === AppState.Practice || appState === AppState.Story;
     if (inProgress) {
-        if (window.confirm('Weet je zeker dat je terug wilt naar het startscherm? Je huidige oefening wordt dan gestopt.')) {
-            setCurrentUser(null);
-            setPracticeWords([]);
-            setPracticeSettings(null);
-            setAppState(AppState.Welcome);
-        }
-    } else {
+      if (window.confirm('Weet je zeker dat je terug wilt naar het startscherm? Je huidige oefening wordt dan gestopt.')) {
+        setCurrentUser(null);
+        setPracticeWords([]);
+        setPracticeSettings(null);
         setAppState(AppState.Welcome);
+      }
+    } else {
+      setAppState(AppState.Welcome);
     }
   }, [appState]);
 
@@ -292,17 +314,17 @@ const App: React.FC = () => {
       case AppState.Dashboard:
         return <Dashboard allUsersData={allUsersData} onBack={showWelcome} onDeleteSession={deleteSession} />;
       case AppState.Story:
-          if (practiceWords.length > 0 && practiceSettings) {
-              return <StoryView words={practiceWords} settings={practiceSettings} onFinish={finishStoryChallenge} />;
-          }
-          showWelcome();
-          return null;
+        if (practiceWords.length > 0 && practiceSettings) {
+          return <StoryView words={practiceWords} settings={practiceSettings} onFinish={finishStoryChallenge} />;
+        }
+        showWelcome();
+        return null;
       case AppState.SessionSummary:
-          if (sessionSummaryData) {
-              return <SessionSummary summaryData={sessionSummaryData} onClose={handleCloseSummary} />;
-          }
-          showWelcome();
-          return null;
+        if (sessionSummaryData) {
+          return <SessionSummary summaryData={sessionSummaryData} onClose={handleCloseSummary} />;
+        }
+        showWelcome();
+        return null;
       case AppState.Welcome:
       default:
         return <Welcome onStartPractice={startPractice} onShowDashboard={showDashboard} allUsersData={allUsersData} onStartStoryChallenge={startStoryChallenge} onUpdateAvatar={updateAvatar} />;

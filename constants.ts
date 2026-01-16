@@ -2,10 +2,17 @@
 import { WordLevel, Finaliteit, Jaargang, SubjectSpecificCourse, ReadingStrategyItem, FrayerModelData } from './types';
 
 // --- SESSION SETTINGS ---
-export const DEFAULT_WORDS_PER_SESSION = 10;
-export const MIN_WORDS_PER_SESSION = 10;
-export const MAX_WORDS_PER_SESSION = 100;
+export const DEFAULT_WORDS_PER_SESSION = 20;
+export const MIN_WORDS_PER_SESSION = 20;
+export const MAX_WORDS_PER_SESSION = 40;
 export const STORY_MODE_UNLOCK_THRESHOLD = 1000;
+
+// Session length options for UI (used in both Algemeen and Vakspecifiek modes)
+export const SESSION_LENGTH_OPTIONS = [
+    { name: 'Basis', words: 20, emoji: '📚' },
+    { name: 'Standaard', words: 30, emoji: '💪' },
+    { name: 'Intensief', words: 40, emoji: '🧠' },
+];
 
 // --- PREDEFINED FRAYER MODELS (CACHE) ---
 
@@ -196,9 +203,9 @@ const PREDEFINED_ENGELS_ALGEMEEN: Record<string, FrayerModelData> = {
 };
 
 const PREDEFINED_WISKUNDE_ALGEMEEN: Record<string, FrayerModelData> = {
-    'accolade': { definitie: 'Soort haakje { } gebruikt bij wiskundige notaties, bijvoorbeeld om een verzameling aan te duiden.', voorbeelden: [{zin: 'De verzameling van even getallen onder de 10 wordt genoteerd met een accolade: {2, 4, 6, 8}.', gebruiktWoord: 'accolade'}], synoniemen: ['krulhaakje'], antoniemen: ['rond haakje', 'vierkant haakje'], topic: 'Wiskunde Algemeen' },
-    'aftrekken': { definitie: 'Een rekenkundige bewerking waarbij een hoeveelheid van een andere hoeveelheid wordt weggenomen.', voorbeelden: [{zin: 'Als je 5 van 12 moet aftrekken, is het resultaat 7.', gebruiktWoord: 'aftrekken'}], synoniemen: ['verminderen', 'in mindering brengen'], antoniemen: ['optellen', 'toevoegen'], topic: 'Wiskunde Algemeen' },
-    'breuk': { definitie: 'Een getal dat een deel van een geheel voorstelt, bestaande uit een teller en een noemer.', voorbeelden: [{zin: 'De breuk 3/4 betekent drie van de vier gelijke delen.', gebruiktWoord: 'breuk'}], synoniemen: ['fractie'], antoniemen: ['geheel getal'], topic: 'Wiskunde Algemeen' },
+    'accolade': { definitie: 'Soort haakje { } gebruikt bij wiskundige notaties, bijvoorbeeld om een verzameling aan te duiden.', voorbeelden: [{ zin: 'De verzameling van even getallen onder de 10 wordt genoteerd met een accolade: {2, 4, 6, 8}.', gebruiktWoord: 'accolade' }], synoniemen: ['krulhaakje'], antoniemen: ['rond haakje', 'vierkant haakje'], topic: 'Wiskunde Algemeen' },
+    'aftrekken': { definitie: 'Een rekenkundige bewerking waarbij een hoeveelheid van een andere hoeveelheid wordt weggenomen.', voorbeelden: [{ zin: 'Als je 5 van 12 moet aftrekken, is het resultaat 7.', gebruiktWoord: 'aftrekken' }], synoniemen: ['verminderen', 'in mindering brengen'], antoniemen: ['optellen', 'toevoegen'], topic: 'Wiskunde Algemeen' },
+    'breuk': { definitie: 'Een getal dat een deel van een geheel voorstelt, bestaande uit een teller en een noemer.', voorbeelden: [{ zin: 'De breuk 3/4 betekent drie van de vier gelijke delen.', gebruiktWoord: 'breuk' }], synoniemen: ['fractie'], antoniemen: ['geheel getal'], topic: 'Wiskunde Algemeen' },
 };
 
 const PREDEFINED_PERIODIEK_SYSTEEM: Record<string, FrayerModelData> = {
@@ -279,11 +286,11 @@ export const LEVEL_DIFFICULTY_MAP: Record<string, WordLevel.Beginner | WordLevel
 // --- READING STRATEGIES ---
 
 export const STRATEGIES: ReadingStrategyItem[] = [
-  { title: 'Voorspellen', explanation: 'Kijk naar de titel en de gemarkeerde woorden. Waar denk je dat dit verhaal over zal gaan? Goed voorspellen helpt je om de tekst beter te begrijpen.', question: 'Lees de titel en bekijk de vetgedrukte woorden. Schrijf in één of twee zinnen op waar jij denkt dat dit verhaal over zal gaan.' },
-  { title: 'Visualiseren', explanation: 'Maak een beeld in je hoofd terwijl je leest. Dit helpt je om het verhaal beter te onthouden en de sfeer te voelen.', question: 'Kies een alinea uit het verhaal en beschrijf het beeld dat je in je hoofd ziet. Welke kleuren, geluiden en gevoelens komen er bij je op?' },
-  { title: 'Verbanden leggen', explanation: 'Denk na over hoe de gebeurtenissen in het verhaal met elkaar te maken hebben, of hoe het verhaal lijkt op iets wat je zelf hebt meegemaakt.', question: 'Welk verband zie je tussen het begin en het einde van het verhaal? Is er iets veranderd voor de hoofdpersoon?' },
-  { title: 'Vragen stellen', explanation: 'Stel jezelf vragen tijdens het lezen, zoals "Waarom gebeurt dit?" of "Wat zou ik doen?". Dit houdt je actief betrokken bij de tekst.', question: 'Bedenk één "waarom"-vraag over een gebeurtenis in het verhaal en probeer deze zelf te beantwoorden op basis van de tekst.' },
-  { title: 'Samenvatten', explanation: 'Probeer na het lezen in je eigen woorden te vertellen wat het belangrijkste was. Dit is een goede test om te zien of je de kern hebt begrepen.', question: 'Wat is de allerbelangrijkste boodschap of gebeurtenis in dit verhaal? Vat het samen in één zin.' }
+    { title: 'Voorspellen', explanation: 'Kijk naar de titel en de gemarkeerde woorden. Waar denk je dat dit verhaal over zal gaan? Goed voorspellen helpt je om de tekst beter te begrijpen.', question: 'Lees de titel en bekijk de vetgedrukte woorden. Schrijf in één of twee zinnen op waar jij denkt dat dit verhaal over zal gaan.' },
+    { title: 'Visualiseren', explanation: 'Maak een beeld in je hoofd terwijl je leest. Dit helpt je om het verhaal beter te onthouden en de sfeer te voelen.', question: 'Kies een alinea uit het verhaal en beschrijf het beeld dat je in je hoofd ziet. Welke kleuren, geluiden en gevoelens komen er bij je op?' },
+    { title: 'Verbanden leggen', explanation: 'Denk na over hoe de gebeurtenissen in het verhaal met elkaar te maken hebben, of hoe het verhaal lijkt op iets wat je zelf hebt meegemaakt.', question: 'Welk verband zie je tussen het begin en het einde van het verhaal? Is er iets veranderd voor de hoofdpersoon?' },
+    { title: 'Vragen stellen', explanation: 'Stel jezelf vragen tijdens het lezen, zoals "Waarom gebeurt dit?" of "Wat zou ik doen?". Dit houdt je actief betrokken bij de tekst.', question: 'Bedenk één "waarom"-vraag over een gebeurtenis in het verhaal en probeer deze zelf te beantwoorden op basis van de tekst.' },
+    { title: 'Samenvatten', explanation: 'Probeer na het lezen in je eigen woorden te vertellen wat het belangrijkste was. Dit is een goede test om te zien of je de kern hebt begrepen.', question: 'Wat is de allerbelangrijkste boodschap of gebeurtenis in dit verhaal? Vat het samen in één zin.' }
 ];
 
 // --- SUBJECT-SPECIFIC COURSE DATA ---

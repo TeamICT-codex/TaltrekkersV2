@@ -34,7 +34,7 @@ export interface PracticeSettings {
   wordsPerSession: number;
   aiModel?: 'fast' | 'balanced' | 'quality';
   nativeLanguage?: string;
-  
+
   // Velden voor vakspecifieke selectie
   finaliteit?: Finaliteit;
   jaargang?: Jaargang;
@@ -82,10 +82,10 @@ export interface SessionRecord {
 }
 
 export interface SessionSummaryData {
-    score: number;
-    quizResults: QuizResult[];
-    words: string[];
-    settings: PracticeSettings;
+  score: number;
+  quizResults: QuizResult[];
+  words: string[];
+  settings: PracticeSettings;
 }
 
 export interface UserData {
@@ -98,6 +98,16 @@ export interface UserData {
   lastPracticeDate: string | null; // ISO Date string (YYYY-MM-DD)
   points: number;
   avatarId: string;
+  // Word list tracking (per file/context)
+  wordListProgress?: Record<string, WordListProgress>;
+}
+
+// Tracking welke woorden al geoefend zijn per woordenlijst/bestand
+export interface WordListProgress {
+  listId: string;             // Identifier (fileName of contextId)
+  allWords: string[];         // Alle woorden uit de lijst
+  practicedWords: string[];   // Woorden die al geoefend zijn (lowercase)
+  lastPracticed: string;      // ISO datum van laatste sessie
 }
 
 export type AllUsersData = Record<string, UserData>;
@@ -116,8 +126,8 @@ export interface FrayerModelData {
 }
 
 export enum QuestionType {
-    MultipleChoice = 'MC',
-    Writing = 'WRITE'
+  MultipleChoice = 'MC',
+  Writing = 'WRITE'
 }
 
 export interface QuizQuestion {
@@ -140,14 +150,14 @@ export interface StoryData {
 }
 
 export interface SubjectSpecificCourse {
-    id: string;
-    name: string;
-    url?: string;
+  id: string;
+  name: string;
+  url?: string;
 }
 
 export interface Avatar {
-    id: string;
-    emoji: string;
-    name: string;
-    cost: number;
+  id: string;
+  emoji: string;
+  name: string;
+  cost: number;
 }
