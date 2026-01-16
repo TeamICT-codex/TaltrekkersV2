@@ -26,20 +26,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchRole = async (userId: string) => {
-            const { data } = await supabase
+        const fetchAndSyncRole = async (currentUser: User) => {
+            // Check of de gebruiker via leerkrachtcode is ingelogd
+            const requestedRole = currentUser.user_metadata?.requested_role;
+
+            // Haal huidige rol op uit database
+            const { data: profile } = await supabase
                 .from('profiles')
                 .select('role')
-                .eq('id', userId)
+                .eq('id', currentUser.id)
                 .single();
-            setRole(data?.role || 'student');
+
+            // Als gebruiker 'teacher' heeft aangevraagd EN we hebben nog geen teacher-rol
+            if (requestedRole === 'teacher' && profile?.role !== 'teacher') {
+                // Update de rol naar teacher
+                await supabase
+                    .from('profiles')
+                    .update({ role: 'teacher' })
+                    .eq('id', currentUser.id);
+
+                setRole('teacher');
+                console.log('✅ Rol bijgewerkt naar teacher');
+            } else {
+                setRole(profile?.role || 'student');
+            }
         };
 
         // 1. Haal de huidige sessie op bij start
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
-            if (session?.user) fetchRole(session.user.id);
+            if (session?.user) fetchAndSyncRole(session.user);
             setLoading(false);
         });
 
@@ -48,7 +65,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
-                fetchRole(session.user.id);
+                fetchAndSyncRole(session.user);
             } else {
                 setRole(null);
             }
