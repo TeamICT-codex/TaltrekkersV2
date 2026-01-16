@@ -1,7 +1,8 @@
-
 import React, { useState } from 'react';
 import { extractKeyTerms } from '../services/geminiService';
 import { PracticeSettings, WordListProgress } from '../types';
+import { categorizeError, AppError, ERROR_ICONS } from '../services/errorHandling';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import Spinner from './Spinner';
 import { SESSION_LENGTH_OPTIONS, MAX_WORDS_PER_SESSION } from '../constants';
 
@@ -45,11 +46,14 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
     const [stage, setStage] = useState<Stage>('input');
     const [inputText, setInputText] = useState('');
     const [extractedTerms, setExtractedTerms] = useState<string[]>([]);
-    const [selectedLength, setSelectedLength] = useState(SESSION_LENGTH_OPTIONS[0].words); // Default: Basis (20)
-    const [error, setError] = useState<string | null>(null);
+    const [selectedLength, setSelectedLength] = useState(SESSION_LENGTH_OPTIONS[0].words);
+    const [error, setError] = useState<AppError | null>(null);
     const [context, setContext] = useState('');
     const [fileName, setFileName] = useState<string | null>(null);
     const [showAllWords, setShowAllWords] = useState(false);
+    const [lastAnalyzedText, setLastAnalyzedText] = useState<string>(''); // Voor retry
+
+    const { isOnline } = useNetworkStatus();
 
     const resetState = () => {
         setStage('input');
@@ -127,11 +131,18 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
 
     const handleAnalyze = async (textToAnalyze: string) => {
         if (!textToAnalyze.trim()) {
-            setError("Voer tekst in om te analyseren.");
+            setError(categorizeError(new Error('Geen tekst'), 'Tekstinvoer'));
             return;
         }
+
+        if (!isOnline) {
+            setError(categorizeError(new Error('network'), 'Netwerkcontrole'));
+            return;
+        }
+
         setError(null);
         setStage('analyzing');
+        setLastAnalyzedText(textToAnalyze); // Bewaar voor retry
 
         try {
             const terms = await extractKeyTerms(textToAnalyze, { aiModel });
@@ -141,7 +152,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
             setExtractedTerms(terms);
             setStage('selection');
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Analyse mislukt. Probeer het opnieuw.");
+            setError(categorizeError(err, 'Tekst analyseren'));
             setStage('input');
         }
     };
@@ -227,8 +238,8 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                                 key={option.words}
                                 onClick={() => setSelectedLength(option.words)}
                                 className={`p-4 rounded-lg transition-all duration-200 font-medium flex flex-col items-center justify-center h-24 ${selectedLength === option.words
-                                        ? 'bg-tal-purple ring-2 ring-white/50'
-                                        : 'bg-black/20 hover:bg-black/40'
+                                    ? 'bg-tal-purple ring-2 ring-white/50'
+                                    : 'bg-black/20 hover:bg-black/40'
                                     }`}
                             >
                                 <span className="text-2xl mb-1">{option.emoji}</span>
@@ -264,8 +275,8 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                                     <span
                                         key={term}
                                         className={`px-2 py-1 rounded text-xs ${practicedSet.has(term.toLowerCase())
-                                                ? 'bg-green-500/30 text-green-300'
-                                                : 'bg-white/10 text-white'
+                                            ? 'bg-green-500/30 text-green-300'
+                                            : 'bg-white/10 text-white'
                                             }`}
                                         title={practicedSet.has(term.toLowerCase()) ? 'Al geoefend' : 'Nog niet geoefend'}
                                     >
@@ -318,8 +329,35 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                     <input id="file-upload" type="file" accept=".pdf,.docx,.xlsx" className="hidden" onChange={handleFileChange} />
                 </div>
             </div>
-            {error && <p className="text-sm text-red-400 bg-red-900/50 p-2 rounded-md">{error}</p>}
-            <button onClick={() => handleAnalyze(inputText)} disabled={!inputText.trim()} className="w-full px-8 py-3 bg-white/80 text-tal-teal-dark font-bold rounded-lg shadow-lg hover:bg-white disabled:bg-slate-400/50 disabled:text-slate-300 disabled:cursor-not-allowed transition">
+
+            {/* Offline waarschuwing */}
+            {!isOnline && (
+                <div className="flex items-center gap-2 p-3 bg-amber-500/20 border border-amber-500/30 rounded-lg text-amber-200">
+                    <span>📡</span>
+                    <span className="text-sm">Geen internetverbinding gedetecteerd</span>
+                </div>
+            )}
+
+            {/* Error display met retry optie */}
+            {error && (
+                <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-lg">
+                    <div className="flex items-center gap-2 text-red-200 mb-2">
+                        <span>{ERROR_ICONS[error.category]}</span>
+                        <span className="font-semibold">{error.message}</span>
+                    </div>
+                    <p className="text-sm text-red-300/80 mb-3">{error.suggestion}</p>
+                    {error.canRetry && lastAnalyzedText && (
+                        <button
+                            onClick={() => handleAnalyze(lastAnalyzedText)}
+                            className="px-4 py-2 bg-red-500/30 hover:bg-red-500/50 rounded-lg text-sm font-medium transition"
+                        >
+                            🔄 Opnieuw proberen
+                        </button>
+                    )}
+                </div>
+            )}
+
+            <button onClick={() => handleAnalyze(inputText)} disabled={!inputText.trim() || !isOnline} className="w-full px-8 py-3 bg-white/80 text-tal-teal-dark font-bold rounded-lg shadow-lg hover:bg-white disabled:bg-slate-400/50 disabled:text-slate-300 disabled:cursor-not-allowed transition">
                 Analyseer Tekst
             </button>
         </div>
