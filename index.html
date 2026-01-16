@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GOTALOK - TALtrekkers Woordenschat Trainer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Poppins', sans-serif;
+      }
+      /* --- THEME SYSTEM --- */
+      :root, [data-theme="default"] {
+        --color-brand: #2D7A7B;
+        --color-brand-dark: #286b6c;
+        --color-primary: #9F86C0;
+        --color-primary-dark: #8b73a8;
+        --color-secondary: #FFC75F;
+        
+        --color-background: #f9fafb; /* gray-50 */
+        --color-surface: #ffffff; /* white */
+        --color-surface-alt: #f1f5f9; /* slate-100 */
+        --color-surface-dark: #e2e8f0; /* slate-200 */
+
+        --color-text-primary: #334155; /* slate-700 */
+        --color-text-secondary: #64748b; /* slate-500 */
+        --color-text-muted: #94a3b8; /* slate-400 */
+        --color-text-inverted: #ffffff; /* white */
+
+        --color-border: #e2e8f0; /* slate-200 */
+        --color-success: #16a34a; /* green-600 */
+        --color-success-dark: #15803d; /* green-700 */
+        --color-danger: #dc2626; /* red-600 */
+        --color-danger-dark: #b91c1c; /* red-700 */
+        
+        --color-pro-tip-background: #fffbeb; /* amber-50 */
+        --color-pro-tip-text: #92400e; /* amber-800 */
+      }
+      
+      [data-theme="high-contrast"] {
+        --color-brand: #003d7a;
+        --color-brand-dark: #002b54;
+        --color-primary: #005fcc;
+        --color-primary-dark: #004da3;
+        --color-secondary: #ffc700;
+        
+        --color-background: #ffffff;
+        --color-surface: #ffffff;
+        --color-surface-alt: #f0f0f0;
+        --color-surface-dark: #e0e0e0;
+
+        --color-text-primary: #000000;
+        --color-text-secondary: #4a4a4a;
+        --color-text-muted: #6b6b6b;
+        --color-text-inverted: #ffffff;
+
+        --color-border: #9b9b9b;
+        --color-success: #006422;
+        --color-success-dark: #004d1b;
+        --color-danger: #c00000;
+        --color-danger-dark: #990000;
+
+        --color-pro-tip-background: #f0f0f0;
+        --color-pro-tip-text: #000000;
+      }
+
+      [data-theme="dark"] {
+        --color-brand: #38bdf8;
+        --color-brand-dark: #0ea5e9;
+        --color-primary: #a78bfa;
+        --color-primary-dark: #8b5cf6;
+        --color-secondary: #facc15;
+        
+        --color-background: #0f172a; /* slate-900 */
+        --color-surface: #1e293b; /* slate-800 */
+        --color-surface-alt: #334155; /* slate-700 */
+        --color-surface-dark: #475569; /* slate-600 */
+
+        --color-text-primary: #f1f5f9; /* slate-100 */
+        --color-text-secondary: #94a3b8; /* slate-400 */
+        --color-text-muted: #64748b; /* slate-500 */
+        --color-text-inverted: #0f172a; /* slate-900 */
+
+        --color-border: #475569; /* slate-600 */
+        --color-success: #4ade80; /* green-400 */
+        --color-success-dark: #22c55e; /* green-500 */
+        --color-danger: #f87171; /* red-400 */
+        --color-danger-dark: #ef4444; /* red-500 */
+
+        --color-pro-tip-background: #44403c; /* stone-800 */
+        --color-pro-tip-text: #fde68a; /* amber-200 */
+      }
+      
+      [data-theme="color-friendly"] {
+        --color-brand: #0077b6;
+        --color-brand-dark: #005a8c;
+        --color-primary: #0096c7;
+        --color-primary-dark: #0077b6;
+        --color-secondary: #fb8500;
+
+        --color-background: #edf6f9;
+        --color-surface: #ffffff;
+        --color-surface-alt: #e0eef2;
+        --color-surface-dark: #cde1e8;
+        
+        --color-text-primary: #023047;
+        --color-text-secondary: #455a64;
+        --color-text-muted: #607d8b;
+        --color-text-inverted: #ffffff;
+        
+        --color-border: #b0bec5;
+        --color-success: #007f5f;
+        --color-success-dark: #00664c;
+        --color-danger: #d00000;
+        --color-danger-dark: #a60000;
+
+        --color-pro-tip-background: #fff3e0;
+        --color-pro-tip-text: #5f4300;
+      }
+      
+      /* --- APPLYING THEME TO CLASSES --- */
+      body {
+        background-color: var(--color-background);
+        color: var(--color-text-primary);
+        transition: background-color 0.3s, color 0.3s;
+      }
+      .bg-tal-teal { background-color: var(--color-brand); }
+      .text-tal-teal { color: var(--color-brand); }
+      .border-tal-teal { border-color: var(--color-brand); }
+      .ring-tal-teal { --tw-ring-color: var(--color-brand); }
+      .hover\:bg-tal-teal-dark:hover { background-color: var(--color-brand-dark); }
+      
+      .bg-tal-purple { background-color: var(--color-primary); }
+      .text-tal-purple { color: var(--color-primary); }
+      .border-tal-purple { border-color: var(--color-primary); }
+      .ring-tal-purple { --tw-ring-color: var(--color-primary); }
+      .hover\:bg-tal-purple-dark:hover { background-color: var(--color-primary-dark); }
+
+      .bg-tal-gold { background-color: var(--color-secondary); }
+      .text-tal-gold { color: var(--color-secondary); }
+      .border-tal-gold { border-color: var(--color-secondary); }
+      
+      .text-tal-teal-dark { color: var(--color-brand-dark); } /* Added for story view button */
+      
+      /* General themed classes */
+      .bg-background { background-color: var(--color-background); }
+      .bg-surface { background-color: var(--color-surface); }
+      .bg-surface-alt { background-color: var(--color-surface-alt); }
+      .bg-surface-dark { background-color: var(--color-surface-dark); }
+      .text-primary { color: var(--color-text-primary); }
+      .text-secondary { color: var(--color-text-secondary); }
+      .text-muted { color: var(--color-text-muted); }
+      .text-inverted { color: var(--color-text-inverted); }
+      .border-themed { border-color: var(--color-border); }
+      
+      /* Specific component classes */
+      .bg-success { background-color: var(--color-success); }
+      .hover\:bg-success-dark:hover { background-color: var(--color-success-dark); }
+      .text-danger { color: var(--color-danger); }
+      .bg-pro-tip { background-color: var(--color-pro-tip-background); }
+      .text-pro-tip { color: var(--color-pro-tip-text); }
+
+
+      @keyframes pulse-bright {
+        0%, 100% {
+          opacity: 0.8;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1.1);
+        }
+      }
+      @keyframes progress-indeterminate {
+        0% {
+          transform: translateX(-100%) scaleX(0.5);
+        }
+        50% {
+          transform: translateX(0) scaleX(1);
+        }
+        100% {
+          transform: translateX(100%) scaleX(0.5);
+        }
+      }
+      @keyframes fade-in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes pulse-once {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.03); }
+      }
+      @keyframes score-circle-progress {
+        from { stroke-dashoffset: 628; }
+      }
+      .animate-pulse-bright {
+          animation: pulse-bright 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      .animate-progress-indeterminate {
+          animation: progress-indeterminate 2s ease-in-out infinite;
+      }
+      .animate-fade-in {
+        animation: fade-in 0.5s ease-out forwards;
+      }
+      .animate-pulse-once {
+        animation: pulse-once 0.5s ease-in-out;
+      }
+      @media print {
+        body * {
+            visibility: hidden;
+        }
+        .printable-area, .printable-area * {
+            visibility: visible;
+        }
+        .printable-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+        }
+        .bg-white {
+            box-shadow: none !important;
+            border: 1px solid #ccc;
+        }
+        .divide-y > :not([hidden]) ~ :not([hidden]) {
+            border-top-width: 1px;
+            border-color: #eee;
+        }
+        p, h1, h2, h3, h4, div {
+            color: #000 !important;
+        }
+        .break-inside-avoid-page {
+            break-inside: avoid-page;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.21.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="text-slate-700">
+    <div id="root"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.9/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
