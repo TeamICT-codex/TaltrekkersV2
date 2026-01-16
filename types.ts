@@ -5,6 +5,7 @@ export enum AppState {
   Practice,
   SessionSummary,
   Story,
+  TeacherDashboard,
 }
 
 export enum WordLevel {

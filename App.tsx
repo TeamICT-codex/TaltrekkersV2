@@ -12,6 +12,7 @@ import Header from './components/Header';
 // import { ThemeProvider } from './components/ThemeContext'; // Removed, moved to index.tsx
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
+import TeacherDashboard from './components/TeacherDashboard';
 import { saveSessionToSupabase, updateWordProgressInSupabase } from './services/db';
 
 
@@ -355,6 +356,8 @@ const App: React.FC = () => {
         }
         showWelcome();
         return null;
+      case AppState.TeacherDashboard:
+        return <TeacherDashboard onBack={showWelcome} />;
       case AppState.Dashboard:
         return <Dashboard allUsersData={allUsersData} onBack={showWelcome} onDeleteSession={deleteSession} />;
       case AppState.Story:
@@ -382,6 +385,7 @@ const App: React.FC = () => {
       <Header
         onLogoClick={() => setAppState(AppState.Welcome)}
         onShowLogin={() => setShowLogin(true)}
+        onShowTeacherDashboard={() => setAppState(AppState.TeacherDashboard)}
       />
 
       {showLogin && (

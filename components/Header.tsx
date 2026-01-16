@@ -14,11 +14,12 @@ const themeOptions: { id: Theme; label: string }[] = [
 interface HeaderProps {
   onLogoClick: () => void;
   onShowLogin: () => void;
+  onShowTeacherDashboard?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ onLogoClick, onShowLogin }) => {
+const Header: React.FC<HeaderProps> = ({ onLogoClick, onShowLogin, onShowTeacherDashboard }) => {
   const { theme, setTheme } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, role, signOut } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
@@ -104,8 +105,19 @@ const Header: React.FC<HeaderProps> = ({ onLogoClick, onShowLogin }) => {
                       {user.email}
                     </div>
                     <div className="px-4 py-2 text-xs font-semibold text-tal-purple uppercase tracking-wider">
-                      Rol: Student
+                      Rol: {role === 'teacher' ? 'Leerkracht 👨‍🏫' : 'Student'}
                     </div>
+                    {role === 'teacher' && onShowTeacherDashboard && (
+                      <button
+                        onClick={() => {
+                          onShowTeacherDashboard();
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="w-full text-left px-4 py-3 text-tal-purple-dark hover:bg-tal-purple/5 flex items-center gap-2 transition-colors font-medium"
+                      >
+                        <span>📊</span> Dashboard
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         signOut();
