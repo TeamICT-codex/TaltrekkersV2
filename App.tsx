@@ -9,9 +9,10 @@ import StoryView from './components/StoryView';
 import { SCHOOLTAAL_WORDS, STORY_MODE_UNLOCK_THRESHOLD } from './constants';
 import SessionSummary from './components/SessionSummary';
 import Header from './components/Header';
-import { ThemeProvider } from './components/ThemeContext';
-import { AuthProvider } from './contexts/AuthContext';
+// import { ThemeProvider } from './components/ThemeContext'; // Removed, moved to index.tsx
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
+import { saveSessionToSupabase, updateWordProgressInSupabase } from './services/db';
 
 
 const App: React.FC = () => {
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettings | null>(null);
   const [sessionSummaryData, setSessionSummaryData] = useState<SessionSummaryData | null>(null);
   const [showLogin, setShowLogin] = useState(false);
+  const { user } = useAuth(); // Haal ingelogde gebruiker op
 
   useEffect(() => {
     // Test/Seed data logic
@@ -83,7 +85,7 @@ const App: React.FC = () => {
     setAppState(AppState.Practice);
   }, []);
 
-  const finishPractice = useCallback((sessionScore: number, quizResults: QuizResult[], frayerModels: FrayerModelData[], studyMode: 'frayer' | 'flashcards', timingData: SessionTimingData) => {
+  const finishPractice = useCallback(async (sessionScore: number, quizResults: QuizResult[], frayerModels: FrayerModelData[], studyMode: 'frayer' | 'flashcards', timingData: SessionTimingData) => {
     if (!currentUser || !practiceWords || !practiceSettings) return;
 
     setAllUsersData(prevData => {
@@ -204,7 +206,46 @@ const App: React.FC = () => {
     });
     setAppState(AppState.SessionSummary);
 
-  }, [setAllUsersData, currentUser, practiceWords, practiceSettings]);
+    // ONLINE: Sync naar Supabase als ingelogd
+    if (user) {
+      // Wat is de context? Filename of cursusID?
+      let context = 'custom';
+      let listId = 'custom-list';
+
+      if (practiceSettings.customFileName) {
+        context = practiceSettings.customFileName;
+        listId = practiceSettings.customFileName;
+      } else if (practiceSettings.courseId) {
+        context = practiceSettings.courseId;
+        listId = practiceSettings.courseId;
+      } else if (practiceSettings.context) {
+        context = practiceSettings.context.toString();
+        listId = practiceSettings.context.toString();
+      }
+
+      // Bereken totale duur (studie + quiz)
+      const totalDuration = (timingData?.studyPhaseSeconds || 0) + (timingData?.quizPhaseSeconds || 0);
+
+      saveSessionToSupabase(
+        user.id,
+        context,
+        practiceSettings.customFileName,
+        sessionScore,
+        quizResults,
+        totalDuration
+      );
+
+      // Update word progress (enkel de woorden die in de quiz zaten of alle practiceWords?)
+      // practiceWords zijn alle woorden. quizResults zijn enkel de vragen.
+      // We nemen alle woorden uit practiceWords als "geoefend".
+      updateWordProgressInSupabase(
+        user.id,
+        listId,
+        practiceWords
+      );
+    }
+
+  }, [setAllUsersData, currentUser, practiceWords, practiceSettings, user]);
 
   const showDashboard = useCallback(() => {
     setAppState(AppState.Dashboard);
@@ -335,38 +376,38 @@ const App: React.FC = () => {
   };
 
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <div className="min-h-screen bg-app-bg text-color-text transition-colors duration-300 font-sans flex flex-col">
-          <Header
-            onLogoClick={() => setAppState(AppState.Welcome)}
-            onShowLogin={() => setShowLogin(true)}
-          />
+    // <AuthProvider> Moved to index.tsx
+    //   <ThemeProvider>
+    <div className="min-h-screen bg-app-bg text-color-text transition-colors duration-300 font-sans flex flex-col">
+      <Header
+        onLogoClick={() => setAppState(AppState.Welcome)}
+        onShowLogin={() => setShowLogin(true)}
+      />
 
-          {showLogin && (
-            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-              <div className="bg-surface w-full max-w-lg rounded-2xl shadow-2xl relative border border-themed overflow-hidden">
-                <button
-                  onClick={() => setShowLogin(false)}
-                  className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-black/5 hover:bg-black/10 transition-colors z-10"
-                  title="Sluiten"
-                >
-                  ✕
-                </button>
-                <Login />
-              </div>
-            </div>
-          )}
-
-          <main className="container mx-auto px-4 py-8 md:py-12 flex-grow">
-            {!showLogin && renderContent()}
-          </main>
-          <footer className="text-center text-xs text-muted p-4">
-            Deze webapplicatie gebruikt AI. Technologie is niet onfeilbaar en maakt, net als mensen, af en toe fouten. Zie eventuele foutjes als een leerkans! :D
-          </footer>
+      {showLogin && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-surface w-full max-w-lg rounded-2xl shadow-2xl relative border border-themed overflow-hidden">
+            <button
+              onClick={() => setShowLogin(false)}
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-black/5 hover:bg-black/10 transition-colors z-10"
+              title="Sluiten"
+            >
+              ✕
+            </button>
+            <Login />
+          </div>
         </div>
-      </ThemeProvider>
-    </AuthProvider>
+      )}
+
+      <main className="container mx-auto px-4 py-8 md:py-12 flex-grow">
+        {!showLogin && renderContent()}
+      </main>
+      <footer className="text-center text-xs text-muted p-4">
+        Deze webapplicatie gebruikt AI. Technologie is niet onfeilbaar en maakt, net als mensen, af en toe fouten. Zie eventuele foutjes als een leerkans! :D
+      </footer>
+    </div>
+    //   </ThemeProvider>
+    // </AuthProvider>
   );
 };
 
