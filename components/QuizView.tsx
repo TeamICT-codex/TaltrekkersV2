@@ -20,12 +20,12 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   const [score, setScore] = useState(0);
   const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [questionStartTime, setQuestionStartTime] = useState(Date.now());
-  
+
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
 
   const currentQuestion = questions[currentQuestionIndex];
-  
+
   // Get list of all words for the word bank (for writing questions)
   const allWords = questions.map(q => q.woord).sort();
 
@@ -36,38 +36,38 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   }, [currentQuestionIndex]);
 
   if (!questions || questions.length === 0 || !currentQuestion) {
-      return (
-        <div className="text-center p-8 bg-yellow-900 border border-yellow-600 text-yellow-200 rounded-lg">
-            <h3 className="text-xl font-bold">Quiz niet beschikbaar</h3>
-            <p>De AI kon geen quiz genereren voor deze woorden. Probeer het opnieuw.</p>
-            <button onClick={() => onComplete(0, [])} className="mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">
-                Sessie overslaan
-            </button>
-        </div>
-      );
+    return (
+      <div className="text-center p-8 bg-yellow-900 border border-yellow-600 text-yellow-200 rounded-lg">
+        <h3 className="text-xl font-bold">Quiz niet beschikbaar</h3>
+        <p>De AI kon geen quiz genereren voor deze woorden. Probeer het opnieuw.</p>
+        <button onClick={() => onComplete(0, [])} className="mt-4 px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600">
+          Sessie overslaan
+        </button>
+      </div>
+    );
   }
 
   const processAnswer = async (isCorrect: boolean, userAnswerStr: string) => {
     const seconds = (Date.now() - questionStartTime) / 1000;
     onRecordQuizTime(currentQuestion.woord, seconds);
-    
+
     setIsAnswered(true);
 
     if (isCorrect) {
-      setScore(prevScore => prevScore + 10);
+      setScore(prevScore => prevScore + 1);
       setFeedbackMessage(null);
     } else {
-        // Trigger Context-Aware Feedback
-        setIsFeedbackLoading(true);
-        try {
-            const correctAnswer = currentQuestion.woord;
-            const feedback = await generateFeedbackForError(currentQuestion.vraag, userAnswerStr, correctAnswer, { aiModel: 'fast' });
-            setFeedbackMessage(feedback);
-        } catch (e) {
-            setFeedbackMessage("Jammer, dat was niet goed. Probeer het volgende keer opnieuw!");
-        } finally {
-            setIsFeedbackLoading(false);
-        }
+      // Trigger Context-Aware Feedback
+      setIsFeedbackLoading(true);
+      try {
+        const correctAnswer = currentQuestion.woord;
+        const feedback = await generateFeedbackForError(currentQuestion.vraag, userAnswerStr, correctAnswer, { aiModel: 'fast' });
+        setFeedbackMessage(feedback);
+      } catch (e) {
+        setFeedbackMessage("Jammer, dat was niet goed. Probeer het volgende keer opnieuw!");
+      } finally {
+        setIsFeedbackLoading(false);
+      }
     }
 
     setQuizResults(prevResults => [
@@ -85,9 +85,9 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   };
 
   const handleTextAnswer = () => {
-      if (isAnswered || !textAnswer.trim()) return;
-      const isCorrect = textAnswer.trim().toLowerCase() === currentQuestion.woord.toLowerCase();
-      processAnswer(isCorrect, textAnswer);
+    if (isAnswered || !textAnswer.trim()) return;
+    const isCorrect = textAnswer.trim().toLowerCase() === currentQuestion.woord.toLowerCase();
+    processAnswer(isCorrect, textAnswer);
   };
 
   const handleNext = () => {
@@ -112,7 +112,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
     }
     return "bg-black/20 border-transparent text-slate-400 cursor-not-allowed";
   };
-  
+
   return (
     <div className="max-w-3xl mx-auto p-6 sm:p-8 bg-tal-teal text-slate-200 rounded-2xl shadow-2xl">
       <div className="flex justify-between items-baseline mb-8">
@@ -127,83 +127,86 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
 
       {/* Multiple Choice Layout */}
       {currentQuestion.type === QuestionType.MultipleChoice && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currentQuestion.opties.map((option, index) => (
-              <button
-                key={index}
-                onClick={() => handleMCAnswer(index)}
-                disabled={isAnswered}
-                className={`p-5 rounded-xl border text-center transition-all duration-300 transform focus:scale-[1.02] ${getButtonClass(index)}`}
-              >
-                <span className="font-medium text-lg">{option}</span>
-              </button>
-            ))}
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {currentQuestion.opties.map((option, index) => (
+            <button
+              key={index}
+              onClick={() => handleMCAnswer(index)}
+              disabled={isAnswered}
+              className={`p-5 rounded-xl border text-center transition-all duration-300 transform focus:scale-[1.02] ${getButtonClass(index)}`}
+            >
+              <span className="font-medium text-lg">{option}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Writing Question Layout */}
       {currentQuestion.type === QuestionType.Writing && (
-          <div className="space-y-6">
-              <div className="flex gap-2">
-                <input 
-                    type="text" 
-                    value={textAnswer}
-                    onChange={(e) => setTextAnswer(e.target.value)}
-                    disabled={isAnswered}
-                    placeholder="Typ het woord hier..."
-                    className="w-full p-4 rounded-xl bg-white/10 border border-white/30 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-tal-purple outline-none text-lg"
-                    onKeyDown={(e) => e.key === 'Enter' && handleTextAnswer()}
-                />
-                <button 
-                    onClick={handleTextAnswer}
-                    disabled={isAnswered || !textAnswer.trim()}
-                    className="px-6 py-2 bg-tal-purple text-white font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-tal-purple-dark transition"
-                >
-                    Controleer
-                </button>
-              </div>
-
-              {/* Word Bank Hint */}
-              <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                  <p className="text-xs text-slate-400 mb-2 font-bold uppercase">Woordenbank (Hulp nodig?)</p>
-                  <div className="flex flex-wrap gap-2">
-                      {allWords.map(word => (
-                          <span key={word} className="px-2 py-1 bg-black/20 rounded text-sm text-slate-300 select-none">
-                              {word}
-                          </span>
-                      ))}
-                  </div>
-              </div>
+        <div className="space-y-6">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={textAnswer}
+              onChange={(e) => setTextAnswer(e.target.value)}
+              disabled={isAnswered}
+              placeholder="Typ het woord hier..."
+              className="w-full p-4 rounded-xl bg-white/10 border border-white/30 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-tal-purple outline-none text-lg"
+              onKeyDown={(e) => e.key === 'Enter' && handleTextAnswer()}
+            />
+            <button
+              onClick={handleTextAnswer}
+              disabled={isAnswered || !textAnswer.trim()}
+              className="px-6 py-2 bg-tal-purple text-white font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-tal-purple-dark transition"
+            >
+              Controleer
+            </button>
           </div>
+
+          {/* Word Bank Hint */}
+          <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <p className="text-xs text-slate-400 font-bold uppercase">Woordenbank (Hulp nodig?)</p>
+              <p className="text-[11px] text-amber-300 font-medium">💡 Tip: Typ ook het lidwoord (de/het) als dat bij het woord hoort!</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {allWords.map(word => (
+                <span key={word} className="px-2 py-1 bg-black/20 rounded text-sm text-slate-300 select-none">
+                  {word}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
-      
+
       {isAnswered && (
         <div className="mt-8 pt-6 border-t border-white/20 text-center animate-fade-in">
-            {((currentQuestion.type === QuestionType.MultipleChoice && selectedAnswer === currentQuestion.correctAntwoordIndex) || 
-              (currentQuestion.type === QuestionType.Writing && textAnswer.trim().toLowerCase() === currentQuestion.woord.toLowerCase())) ? (
-                <div className="flex items-center justify-center text-green-400 mb-4">
-                    <CheckIcon className="h-8 w-8 mr-2" />
-                    <p className="font-bold text-xl">Correct!</p>
-                </div>
-            ) : (
-                <div className="text-red-400 mb-4">
-                    <div className="flex items-center justify-center mb-2">
-                        <XIcon className="h-8 w-8 mr-2" />
-                        <p className="font-bold text-xl">Helaas!</p>
-                    </div>
-                    <p className="text-slate-200 mb-4">Het juiste antwoord was: <strong className="text-white">"{currentQuestion.woord}"</strong></p>
-                    
-                    {/* Context Aware Feedback Area */}
-                    <div className="bg-red-900/30 p-4 rounded-lg border border-red-500/30 text-sm text-red-100 max-w-xl mx-auto">
-                        <p className="font-bold mb-1">💡 Feedback:</p>
-                        {isFeedbackLoading ? (
-                            <div className="flex justify-center py-2"><Spinner className="h-4 w-4 text-red-200" /></div>
-                        ) : (
-                            <p className="italic">{feedbackMessage}</p>
-                        )}
-                    </div>
-                </div>
-            )}
+          {((currentQuestion.type === QuestionType.MultipleChoice && selectedAnswer === currentQuestion.correctAntwoordIndex) ||
+            (currentQuestion.type === QuestionType.Writing && textAnswer.trim().toLowerCase() === currentQuestion.woord.toLowerCase())) ? (
+            <div className="flex items-center justify-center text-green-400 mb-4">
+              <CheckIcon className="h-8 w-8 mr-2" />
+              <p className="font-bold text-xl">Correct!</p>
+            </div>
+          ) : (
+            <div className="text-red-400 mb-4">
+              <div className="flex items-center justify-center mb-2">
+                <XIcon className="h-8 w-8 mr-2" />
+                <p className="font-bold text-xl">Helaas!</p>
+              </div>
+              <p className="text-slate-200 mb-4">Het juiste antwoord was: <strong className="text-white">"{currentQuestion.woord}"</strong></p>
+
+              {/* Context Aware Feedback Area */}
+              <div className="bg-red-900/30 p-4 rounded-lg border border-red-500/30 text-sm text-red-100 max-w-xl mx-auto">
+                <p className="font-bold mb-1">💡 Feedback:</p>
+                {isFeedbackLoading ? (
+                  <div className="flex justify-center py-2"><Spinner className="h-4 w-4 text-red-200" /></div>
+                ) : (
+                  <p className="italic">{feedbackMessage}</p>
+                )}
+              </div>
+            </div>
+          )}
           <button onClick={handleNext} className="mt-6 w-full md:w-auto px-10 py-4 bg-tal-purple text-white font-bold text-lg rounded-xl shadow-lg hover:bg-tal-purple-dark transform hover:scale-105 active:scale-[0.98] transition-all duration-300">
             {currentQuestionIndex < questions.length - 1 ? 'Volgende vraag' : 'Sessie Afronden'}
           </button>

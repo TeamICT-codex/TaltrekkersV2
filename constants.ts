@@ -233,36 +233,105 @@ export const ALL_PREDEFINED_MODELS: Record<string, FrayerModelData> = {
 
 // --- WORD LISTS ---
 
-export const SCHOOLTAAL_WORDS: string[] = [
-    'analyseren', 'interpreteren', 'concluderen', 'definiëren', 'illustreren', 'vergelijken', 'categoriseren', 'synthetiseren', 'evalueren', 'argumenteren', 'oorzaak', 'gevolg', 'verband', 'structuur', 'functie', 'kenmerk', 'aspect', 'factor', 'principe', 'theorie', 'hypothese', 'onderzoek', 'gegeven', 'bron', 'bewijs', 'context', 'perspectief', 'relevant', 'essentieel', 'significant', 'chronologisch', 'schematisch', 'grafisch', 'abstract', 'concreet', 'subjectief', 'objectief', 'kritisch', 'systematisch', 'logisch', 'toepassen', 'ontwikkelen', 'formuleren', 'beargumenteren', 'reflecteren', 'nuanceren', 'generaliseren', 'specificeren', 'reproduceren', 'construeren', 'procedure', 'methode', 'techniek', 'strategie', 'proces', 'cyclus', 'fase', 'stadium', 'component', 'element', 'variabele', 'constante', 'patroon', 'trend', 'afwijking', 'gemiddelde', 'mediaan', 'modus', 'frequentie', 'proportie', 'correlatie', 'causaliteit', 'validiteit', 'betrouwbaarheid', 'representatief', 'concept', 'model', 'paradigma', 'visie', 'standpunt', 'feit', 'mening', 'vooroordeel', 'stereotype', 'norm', 'waarde', 'cultuur', 'maatschappij', 'individu', 'collectief', 'interactie', 'communicatie', 'conflict', 'samenwerking', 'competentie', 'vaardigheid', 'attitude', 'kennis', 'inzicht', 'ervaring', 'doelstelling', 'resultaat', 'effect', 'impact', 'efficiëntie', 'effectiviteit', 'kwaliteit', 'kwantiteit', 'toename', 'afname'
+// Placeholder word lists - user will provide actual words later
+const WOORDENSCHAT_2DF_WORDS: string[] = [
+    // Woordenschat 2e graad dubbele finaliteit (159 woorden)
+    'aantonen', 'achterhalen', 'analyseren', 'argumenteren', 'benoemen', 'beoordelen', 'beschrijven', 'concluderen',
+    'de conclusie', 'conclusie trekken', 'de context', 'definiëren', 'interpreteren', 'kritisch redeneren',
+    'het perspectief', 'schetsen', 'situeren', 'staven met', 'toelichten', 'vergelijken',
+    'aanpassen', 'aansluiten', 'aanvankelijk', 'aanvullen', 'de aanwijzing', 'aanzienlijk', 'achtereenvolgens',
+    'de achtergrond', 'de actie', 'de activiteit', 'de administratie', 'het advies', 'afbakenen',
+    'afhankelijk zijn van', 'afleiden', 'de afmeting', 'afronden', 'afsluiten', 'algemeen', 'de arbeidsmarkt',
+    'het artikel', 'het aspect', 'de atmosfeer', 'automatiseren', 'de basis', 'het bedrag', 'de beoordeling',
+    'bepalen', 'beperken', 'berekenen', 'de berekening', 'beschermen', 'beschikbaar', 'beschikken over',
+    'beschouwen', 'beslissen', 'bestaan uit', 'de bestemming', 'betreffen', 'betrekking hebben op', 'bevatten',
+    'het bewijs', 'bewust', 'bijbehorend', 'bijstellen', 'binnenlands', 'de bodem', 'de brandstof', 'bruikbaar',
+    'het budget', 'centraal', 'de cirkel', 'de combinatie', 'de communicatie', 'compleet', 'constateren',
+    'controleren', 'de cultuur', 'het dal', 'de daling', 'deelbaar', 'deelnemen aan', 'de definitie',
+    'het detail', 'het diagram', 'de diepte', 'het doel', 'de doelstelling', 'doordat', 'door middel van',
+    'de doorsnede', 'het effect', 'de eigenschap', 'de energie', 'enerzijds', 'eveneens', 'eventueel', 'exact',
+    'het experiment', 'de factor', 'de functie', 'het gegeven', 'de gegevens', 'het geheel', 'het gemiddelde',
+    'de grafiek', 'de grondstof', 'de hoeveelheid', 'de informatie', 'de invloed', 'invoeren', 'de isolatie',
+    'de kwaliteit', 'kwalitatief', 'de kwantiteit', 'het klimaat', 'de kracht', 'de maatregel', 'het materiaal',
+    'meten', 'de methode', 'het model', 'de mogelijkheid', 'het onderzoek', 'onderzoeken', 'ontwikkelen',
+    'de ontwikkeling', 'de oplossing', 'de oppervlakte', 'de oorzaak', 'de overeenkomst', 'het proces',
+    'het product', 'de productie', 'realiseren (zich)', 'het resultaat', 'de structuur', 'de techniek',
+    'de theorie', 'toepassen', 'de toepassing', 'de toestand', 'veranderen', 'de verhouding', 'verklaren',
+    'het verschil', 'verwerken', 'het volume'
 ];
 
-const NEDERLANDS_ALGEMEEN_WORDS: string[] = Object.keys(PREDEFINED_NEDERLANDS_ALGEMEEN);
-const ENGELS_ALGEMEEN_WORDS: string[] = Object.keys(PREDEFINED_ENGELS_ALGEMEEN);
-const WISKUNDE_ALGEMEEN_WORDS: string[] = Object.keys(PREDEFINED_WISKUNDE_ALGEMEEN);
-const PERIODIEK_SYSTEEM_WORDS: string[] = Object.keys(PREDEFINED_PERIODIEK_SYSTEEM);
+const WOORDENSCHAT_2AF_WORDS: string[] = [
+    // Woordenschat 2e graad arbeidsfinaliteit (113 woorden)
+    'aantonen', 'achterhalen', 'analyseren', 'argumenteren', 'benoemen', 'beoordelen', 'beschrijven', 'concluderen',
+    'de conclusie', 'de context', 'definiëren', 'interpreteren', 'schetsen', 'situeren', 'staven met', 'toelichten',
+    'vergelijken', 'aanpassen', 'aansluiten', 'aanvullen', 'de aanwijzing', 'achtereenvolgens', 'de achtergrond',
+    'de activiteit', 'het advies', 'afhankelijk zijn van', 'aflezen', 'de afmeting', 'afronden', 'afsluiten',
+    'afspreken', 'het afval', 'algemeen', 'de arbeid', 'het artikel', 'de basis', 'het bedrag', 'het bedrijf',
+    'het begrip', 'de behandeling', 'de behoefte', 'het belang', 'de beoordeling', 'bepalen', 'berekenen',
+    'beschermen', 'beschikbaar', 'beslissen', 'bestaan uit', 'bestellen', 'betalen', 'betreffen', 'het bewijs',
+    'bewust', 'bijhouden', 'de bodem', 'de brandstof', 'bruikbaar', 'het budget', 'centraal', 'de controle',
+    'controleren', 'het deel', 'deelnemen aan', 'het detail', 'het diagram', 'het doel', 'doordat',
+    'door middel van', 'duidelijk maken', 'het effect', 'de eigenschap', 'de energie', 'de ervaring', 'eventueel',
+    'de functie', 'het gebruik', 'gebruik maken van', 'het gegeven', 'de gegevens', 'het geheel', 'gemiddeld',
+    'het gewicht', 'de grafiek', 'de grondstof', 'de hoeveelheid', 'de informatie', 'de invloed', 'invullen',
+    'de kwaliteit', 'de kracht', 'de maatregel', 'het materiaal', 'meten', 'het model', 'de mogelijkheid',
+    'het onderzoek', 'de oplossing', 'de oorzaak', 'praktisch', 'het proces', 'het product', 'het resultaat',
+    'de situatie', 'de techniek', 'toepassen', 'de toestand', 'veranderen', 'het verschil', 'verwerken',
+    'de waarde', 'het volume'
+];
 
-const BIOLOGIE_WORDS: string[] = ['cel', 'ecosysteem', 'fotosynthese', 'DNA', 'evolutie', 'organisme', 'soort', 'populatie', 'genetica', 'metabolisme'];
-const MENS_EN_MAATSCHAPPIJ_WORDS: string[] = ['democratie', 'globalisering', 'cultuur', 'migratie', 'samenleving', 'politiek', 'geschiedenis', 'geografie', 'identiteit', 'socialisatie'];
-const ECONOMIE_WORDS: string[] = ['markt', 'inflatie', 'conjunctuur', 'bruto nationaal product', 'vraag en aanbod', 'monopolie', 'concurrentie', 'investering', 'productiviteit', 'globalisering'];
-const NATUURKUNDE_WORDS: string[] = ['energie', 'kracht', 'snelheid', 'massa', 'atoom', 'molecuul', 'zwaartekracht', 'elektriciteit', 'magnetisme', 'straling'];
-const ACADEMISCHE_WOORDENSCHAT_WORDS: string[] = ['ambigu', 'coherent', 'empirisch', 'intrinsiek', 'legitiem', 'pragmatisch', 'paradox', 'heuristiek', 'methodologie', 'paradigma'];
+const ACADEMISCH_NEDERLANDS_WORDS: string[] = [
+    // Academisch Nederlands (136 woorden)
+    'de analyse', 'analyseren', 'analytisch', 'het argument', 'de argumentatie', 'argumenteren', 'het aspect',
+    'de autonomie', 'de causaliteit', 'chronologisch', 'de context', 'contextueel', 'de correlatie', 'het criterium',
+    'de conclusie', 'concluderen', 'de consensus', 'consequent', 'consistent', 'de contradictie', 'controversieel',
+    'de data', 'de deductie', 'de discrepantie', 'de diversiteit', 'het effect', 'effectief', 'de effectiviteit',
+    'efficiënt', 'elementair', 'elimineren', 'empirisch', 'equivalent', 'de essentie', 'essentieel', 'ethisch',
+    'expliciet', 'de factor', 'het fenomeen', 'frequent', 'de functionaliteit', 'generaliseren', 'de hypothese',
+    'hypothetisch', 'de implicatie', 'impliciet', 'implementeren', 'de indicatie', 'inferieur', 'de innovatie',
+    'integraal', 'de interpretatie', 'intrinsiek', 'relevant', 'de relevantie', 'de legitimiteit', 'de methode',
+    'de methodiek', 'de nuance', 'objectief', 'operationeel', 'de perceptie', 'plausibel', 'de prioriteit',
+    'de procedure', 'het proces', 'de rationalisatie', 'het referentiekader', 'de reflectie', 'de relatie',
+    'relatief', 'representatief', 'de representatie', 'significant', 'de specificatie', 'de strategie', 'structureel',
+    'subjectief', 'de synthese', 'systematisch', 'de tendens', 'de theorie', 'transparant', 'valide', 'de variabele',
+    'de verificatie', 'verifiëren', 'de visie', 'het onderzoek', 'de ontwikkeling', 'de evaluatie', 'het perspectief',
+    'abstract', 'expliciteren', 'structureren', 'positioneren', 'anticiperen', 'de generalisatie', 'kwantitatief',
+    'kwalitatief', 'normatief', 'het concept', 'het model', 'het paradigma', 'de consistentie', 'het interpretatiekader',
+    'academisch', 'de discipline', 'het discours', 'de evidentie', 'verantwoorden', 'de redenering', 'onderbouwen',
+    'de coherentie', 'de samenhang', 'de betrouwbaarheid', 'de validiteit', 'de hypothesevorming', 'theoretisch',
+    'empirische data', 'argumentatief', 'conceptueel', 'methodologisch', 'analytische vaardigheden', 'conclusief',
+    'de probleemstelling', 'de onderzoeksvraag', 'de resultaten', 'de bevindingen', 'interpretatief', 'kritisch',
+    'de systematiek', 'de variatie', 'de contextanalyse', 'de onderzoeksopzet', 'de generaliseerbaarheid'
+];
+
+const PROFESSIONEEL_NEDERLANDS_WORDS: string[] = [
+    // Professioneel Nederlands (102 woorden)
+    'de soft skills', 'de arbeidsattitude', 'de beroepsattitude', 'de verantwoordelijkheid', 'de autonomie',
+    'de motivatie', 'de veerkracht', 'de flexibiliteit', 'het eigenaarschap', 'de zelfreflectie', 'de proactiviteit',
+    'de betrouwbaarheid', 'de punctualiteit', 'de betrokkenheid', 'het initiatief', 'de communicatie', 'de feedback',
+    'de feedbackcultuur', 'de samenwerking', 'het vertrouwen', 'het overleg', 'de instructie', 'de begeleiding',
+    'het loopbaangesprek', 'het sollicitatiegesprek', 'de ontwikkeling', 'de groei', 'de professionalisering',
+    'de competentieontwikkeling', 'de talentontwikkeling', 'de leeromgeving', 'de leeropportuniteit', 'de evaluatie',
+    'de evaluatieprocedure', 'de zelfevaluatie', 'de remediëring', 'de reflectie', 'de stage', 'de administratie',
+    'het werkplekleren', 'de leerling-stagiair', 'de stageplaats', 'het stagebedrijf', 'de stagegever',
+    'de stagementor', 'de stagebegeleider', 'de stagecoördinator', 'de stage-overeenkomst', 'de stage-activiteitenlijst',
+    'de stage-uitvoering', 'de stageduur', 'de werkvloer', 'de aanwezigheid', 'de afwezigheid', 'het uurrooster',
+    'de verzekering', 'de aansprakelijkheid', 'de arbeidsovereenkomst', 'het uittreksel uit het strafregister',
+    'de gezondheidsbeoordeling', 'het beschermingsmateriaal', 'de overmacht', 'de jobinhoud', 'de tewerkstelling',
+    'de werkgever', 'de werkdruk', 'de werkervaring', 'de studentenjob', 'de loopbaan', 'het perspectief',
+    'het netwerk', 'de sollicitatie', 'het curriculum vitae', 'de vacature', 'de vacaturedatabank', 'het profiel',
+    'de beschikbaarheid', 'de referentie', 'de connectie', 'het ondernemerschap', 'het statuut (student-zelfstandige)',
+    'de onderneming', 'de innovatie', 'de cashflow', 'de budgetraming', 'de inclusie', 'de integratie',
+    'de maatschappelijke verantwoordelijkheid', 'het psychologisch contract', 'het empathisch leiderschap',
+    'het duurzaam loopbaanbeleid', 'de context', 'het overlegmoment', 'de planning', 'de taak', 'de opdracht',
+    'de deadline', 'de prioriteit', 'de opvolging', 'de rapportering', 'de afspraak', 'de werkcontext', 'het solliciteren'
+];
 
 export const WORD_LISTS: Record<string, string[]> = {
-    // Algemene vakken
-    [WordLevel.Beginner]: SCHOOLTAAL_WORDS.slice(0, 30),
-    [WordLevel.Intermediate]: SCHOOLTAAL_WORDS.slice(30, 70),
-    [WordLevel.Advanced]: [...SCHOOLTAAL_WORDS.slice(70, 100), ...ACADEMISCHE_WOORDENSCHAT_WORDS],
-    [WordLevel.Schooltaal]: SCHOOLTAAL_WORDS,
-    [WordLevel.Nederlands]: NEDERLANDS_ALGEMEEN_WORDS,
-    [WordLevel.Engels]: ENGELS_ALGEMEEN_WORDS,
-    [WordLevel.Biologie]: BIOLOGIE_WORDS,
-    [WordLevel.MensEnMaatschappij]: MENS_EN_MAATSCHAPPIJ_WORDS,
-    [WordLevel.Economie]: ECONOMIE_WORDS,
-    [WordLevel.Wiskunde]: WISKUNDE_ALGEMEEN_WORDS,
-    [WordLevel.Natuurkunde]: NATUURKUNDE_WORDS,
-    [WordLevel.PeriodiekSysteem]: PERIODIEK_SYSTEEM_WORDS,
-    [WordLevel.AcademischeWoordenschat]: ACADEMISCHE_WOORDENSCHAT_WORDS,
+    [WordLevel.Woordenschat2DF]: WOORDENSCHAT_2DF_WORDS,
+    [WordLevel.Woordenschat2AF]: WOORDENSCHAT_2AF_WORDS,
+    [WordLevel.AcademischNederlands]: ACADEMISCH_NEDERLANDS_WORDS,
+    [WordLevel.ProfessioneelNederlands]: PROFESSIONEEL_NEDERLANDS_WORDS,
 };
 
 // --- DIFFICULTY MAPPING ---
@@ -271,16 +340,10 @@ export const LEVEL_DIFFICULTY_MAP: Record<string, WordLevel.Beginner | WordLevel
     [WordLevel.Beginner]: WordLevel.Beginner,
     [WordLevel.Intermediate]: WordLevel.Intermediate,
     [WordLevel.Advanced]: WordLevel.Advanced,
-    [WordLevel.Schooltaal]: WordLevel.Intermediate,
-    [WordLevel.Nederlands]: WordLevel.Intermediate,
-    [WordLevel.Engels]: WordLevel.Intermediate,
-    [WordLevel.Biologie]: WordLevel.Intermediate,
-    [WordLevel.MensEnMaatschappij]: WordLevel.Intermediate,
-    [WordLevel.Economie]: WordLevel.Advanced,
-    [WordLevel.Wiskunde]: WordLevel.Intermediate,
-    [WordLevel.Natuurkunde]: WordLevel.Advanced,
-    [WordLevel.PeriodiekSysteem]: WordLevel.Intermediate,
-    [WordLevel.AcademischeWoordenschat]: WordLevel.Advanced,
+    [WordLevel.Woordenschat2DF]: WordLevel.Intermediate,
+    [WordLevel.Woordenschat2AF]: WordLevel.Beginner,
+    [WordLevel.AcademischNederlands]: WordLevel.Advanced,
+    [WordLevel.ProfessioneelNederlands]: WordLevel.Intermediate,
 };
 
 // --- READING STRATEGIES ---
@@ -343,5 +406,94 @@ export const SUBJECT_SPECIFIC_COURSES: Record<Finaliteit, Partial<Record<Jaargan
             { id: 'DF-6e-SPOBE', name: 'Sportbegeleider (SPOBE)', url: 'https://sgr18-my.sharepoint.com/:f:/g/personal/info_gotalok_be/IgAaxmW2h8X0ToNyug3zYwzgAac6S5DeY4dv58eKA9x11Yo?e=huje5d' },
             { id: 'DF-6e-WESCH', name: 'Wellness & Schoonheid (WESCH)', url: 'https://sgr18-my.sharepoint.com/:f:/g/personal/info_gotalok_be/IgAwAOV3WQeYRp1cC7Kb51TvAYeoIJQhSrtQudHzvXBFRu4?e=kmiOid' },
         ],
+    },
+    OKAN: {
+        'Fase 1': [
+            { id: 'OKAN-F1', name: 'OKAN Fase 1' },
+        ],
+        'Fase 2': [
+            { id: 'OKAN-F2', name: 'OKAN Fase 2' },
+        ],
+        'Fase 3': [
+            { id: 'OKAN-F3', name: 'OKAN Fase 3' },
+        ],
+        'Fase 4': [
+            { id: 'OKAN-F4', name: 'OKAN Fase 4' },
+        ],
     }
+};
+
+// --- AF VAKKEN STRUCTUUR (Meerlaags: Basisvorming = vakken, Specifiek = richtingen → vakken) ---
+
+export interface AFVak {
+    id: string;
+    name: string;
+    url?: string;
+}
+
+export interface AFRichting {
+    id: string;
+    name: string;
+    vakken: AFVak[];
+}
+
+export interface AFJaargangStructuur {
+    basisvorming: AFVak[];
+    specifiek: AFRichting[];
+}
+
+export const AF_VAKKEN_STRUCTUUR: Partial<Record<Jaargang, AFJaargangStructuur>> = {
+    '3e': {
+        basisvorming: [
+            { id: 'AF-3e-BV-ENG', name: 'Engels', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Basisvorming%2FEngels&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+            { id: 'AF-3e-BV-LB', name: 'Levensbeschouwing', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Basisvorming%2FLevensbeschouwing&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+            { id: 'AF-3e-BV-LO', name: 'Lichamelijke opvoeding', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Basisvorming%2FLichamelijke%20opvoeding&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+            { id: 'AF-3e-BV-PAVA', name: 'PAV A', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Basisvorming%2FPAV%20A&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+            { id: 'AF-3e-BV-PAVB', name: 'PAV B + Talent voor Taal', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Basisvorming%2FPAV%20B%20%2B%20Talent%20voor%20Taal&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+        ],
+        specifiek: [
+            {
+                id: 'AF-3e-SG-ELEK',
+                name: '3 ELEK (Elektriciteit)',
+                vakken: [
+                    { id: 'AF-3e-SG-ELEK-INST', name: 'Elektriciteit installatieleer', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Specifiek%20gedeelte%2F3%20ELEK%2FElektriciteit%20installatieleer&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+                    { id: 'AF-3e-SG-ELEK-PRAK', name: 'Elektriciteit praktijk', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Specifiek%20gedeelte%2F3%20ELEK%2FElektriciteit%20praktijk&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+                    { id: 'AF-3e-SG-ELEK-TECH', name: 'Elektriciteit technisch tekenen', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Specifiek%20gedeelte%2F3%20ELEK%2FElektriciteit%20technisch%20tekenen&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+                    { id: 'AF-3e-SG-ELEK-THEO', name: 'Elektriciteit theorie', url: 'https://sgr18-my.sharepoint.com/personal/tal-trekkers_gotalok_be/_layouts/15/onedrive.aspx?id=%2Fpersonal%2Ftal%2Dtrekkers%5Fgotalok%5Fbe%2FDocuments%2FTALtrekkers%2FArbeidsmarktgerichte%20finaliteit%20%28AF%29%2F3AF%2F3AF%20Specifiek%20gedeelte%2F3%20ELEK%2FElektriciteit%20theorie&viewid=fdf20b93%2D32d4%2D4441%2Da769%2D6d39b308fcd6' },
+                ],
+            },
+            {
+                id: 'AF-3e-SG-HT',
+                name: '3 HT (Haartechnieken)',
+                vakken: [
+                    { id: 'AF-3e-SG-HT-PRAK', name: 'Haartechnieken praktijk', url: undefined },
+                    { id: 'AF-3e-SG-HT-THEO', name: 'Haartechnieken theorie', url: undefined },
+                ],
+            },
+            {
+                id: 'AF-3e-SG-MECH',
+                name: '3 MECH (Mechanica)',
+                vakken: [
+                    { id: 'AF-3e-SG-MECH-PRAK', name: 'Mechanica praktijk', url: undefined },
+                    { id: 'AF-3e-SG-MECH-THEO', name: 'Mechanica theorie', url: undefined },
+                ],
+            },
+            {
+                id: 'AF-3e-SG-OL',
+                name: '3 O&L (Organisatie & Logistiek)',
+                vakken: [
+                    { id: 'AF-3e-SG-OL-PRAK', name: 'O&L praktijk', url: undefined },
+                    { id: 'AF-3e-SG-OL-THEO', name: 'O&L theorie', url: undefined },
+                ],
+            },
+            {
+                id: 'AF-3e-SG-ZW',
+                name: '3 Z&W (Zorg & Welzijn)',
+                vakken: [
+                    { id: 'AF-3e-SG-ZW-PRAK', name: 'Zorg & Welzijn praktijk', url: undefined },
+                    { id: 'AF-3e-SG-ZW-THEO', name: 'Zorg & Welzijn theorie', url: undefined },
+                ],
+            },
+        ],
+    },
 };

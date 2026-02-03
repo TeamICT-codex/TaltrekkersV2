@@ -11,9 +11,11 @@ import { generateDidacticAnalysis } from '../services/geminiService';
 import Spinner from './Spinner';
 
 interface DashboardProps {
-  allUsersData: AllUsersData;
-  onBack: () => void;
-  onDeleteSession: (userName: string, sessionDate: string) => void;
+    allUsersData: AllUsersData;
+    onBack: () => void;
+    onDeleteSession: (userName: string, sessionDate: string) => void;
+    onDeleteUserData?: (userName: string) => void;
+    onPracticeWeakWords?: (words: string[]) => void;
 }
 
 interface FeedbackSectionData {
@@ -22,45 +24,45 @@ interface FeedbackSectionData {
 }
 
 const PasswordPrompt: React.FC<{
-  onConfirm: (password: string) => void;
-  onCancel: () => void;
-  error: string | null;
+    onConfirm: (password: string) => void;
+    onCancel: () => void;
+    error: string | null;
 }> = ({ onConfirm, onCancel, error }) => {
-  const [password, setPassword] = React.useState('');
+    const [password, setPassword] = React.useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onConfirm(password);
-  };
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onConfirm(password);
+    };
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" style={{ animationDuration: '150ms' }}>
-      <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm text-left">
-        <h3 className="text-lg font-bold text-slate-800 mb-2">Wachtwoord Vereist</h3>
-        <p className="text-sm text-slate-600 mb-4">Deze actie is beveiligd. Voer het wachtwoord in om door te gaan.</p>
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="teacher-password" className="text-sm font-medium text-slate-700">Wachtwoord</label>
-          <input
-            id="teacher-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={`w-full p-2 border ${error ? 'border-red-500' : 'border-slate-300'} rounded-md focus:ring-2 focus:ring-tal-purple mt-1`}
-            autoFocus
-          />
-          {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
-          <div className="flex justify-end gap-3 mt-6">
-            <button type="button" onClick={onCancel} className="px-4 py-2 bg-slate-100 text-slate-800 font-semibold rounded-lg hover:bg-slate-200 transition-colors">
-              Annuleren
-            </button>
-            <button type="submit" className="px-4 py-2 bg-tal-purple text-white font-semibold rounded-lg hover:bg-tal-purple-dark transition-colors">
-              Bevestigen
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+    return (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" style={{ animationDuration: '150ms' }}>
+            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm text-left">
+                <h3 className="text-lg font-bold text-slate-800 mb-2">Wachtwoord Vereist</h3>
+                <p className="text-sm text-slate-600 mb-4">Deze actie is beveiligd. Voer het wachtwoord in om door te gaan.</p>
+                <form onSubmit={handleSubmit}>
+                    <label htmlFor="teacher-password" className="text-sm font-medium text-slate-700">Wachtwoord</label>
+                    <input
+                        id="teacher-password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className={`w-full p-2 border ${error ? 'border-red-500' : 'border-slate-300'} rounded-md focus:ring-2 focus:ring-tal-purple mt-1`}
+                        autoFocus
+                    />
+                    {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button type="button" onClick={onCancel} className="px-4 py-2 bg-slate-100 text-slate-800 font-semibold rounded-lg hover:bg-slate-200 transition-colors">
+                            Annuleren
+                        </button>
+                        <button type="submit" className="px-4 py-2 bg-tal-purple text-white font-semibold rounded-lg hover:bg-tal-purple-dark transition-colors">
+                            Bevestigen
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
 };
 
 const getSessionTags = (session: SessionRecord): string[] => {
@@ -80,25 +82,24 @@ const getSessionTags = (session: SessionRecord): string[] => {
     } else {
         tags.push('Oefening');
     }
-    
+
     tags.push(`${session.words.length} woorden`);
     return tags;
 }
 
 
 const tagColors: Record<string, string> = {
-    // Algemeen
-    [WordLevel.Biologie]: 'bg-green-100 text-green-800',
-    [WordLevel.MensEnMaatschappij]: 'bg-blue-100 text-blue-800',
-    [WordLevel.Economie]: 'bg-yellow-100 text-yellow-800',
-    [WordLevel.Wiskunde]: 'bg-purple-100 text-purple-800',
-    [WordLevel.Natuurkunde]: 'bg-red-100 text-red-800',
-    [WordLevel.Schooltaal]: 'bg-indigo-100 text-indigo-800',
-    [WordLevel.AcademischeWoordenschat]: 'bg-gray-200 text-gray-800',
-    [WordLevel.Beginner]: 'bg-teal-100 text-teal-800',
+    // New categories
+    [WordLevel.Woordenschat2DF]: 'bg-indigo-100 text-indigo-800',
+    [WordLevel.Woordenschat2AF]: 'bg-orange-100 text-orange-800',
+    [WordLevel.AcademischNederlands]: 'bg-purple-100 text-purple-800',
+    [WordLevel.ProfessioneelNederlands]: 'bg-teal-100 text-teal-800',
+
+    // Difficulty levels
+    [WordLevel.Beginner]: 'bg-green-100 text-green-800',
     [WordLevel.Intermediate]: 'bg-cyan-100 text-cyan-800',
     [WordLevel.Advanced]: 'bg-pink-100 text-pink-800',
-    
+
     // Custom & Default
     [WordLevel.Custom]: 'bg-orange-100 text-orange-800',
     'Oefening': 'bg-slate-200 text-slate-700',
@@ -132,11 +133,11 @@ const parseFeedback = (text: string): FeedbackSectionData[] => {
             });
         }
     }
-    
+
     if (sections.length === 0 && text.trim()) {
         return [{ title: "Analyse", content: text.trim() }];
     }
-    
+
     return sections;
 };
 
@@ -187,7 +188,7 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
     const totalQuestions = session.quizResults.length;
     const scorePercentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
     const tags = getSessionTags(session);
-    
+
     const [analysis, setAnalysis] = useState<FeedbackSectionData[] | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -258,8 +259,8 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
                 </div>
                 <div className="flex items-center justify-start md:justify-end gap-2">
                     {session.timingData && !analysis && (
-                        <button 
-                            onClick={protectedHandleAnalyze} 
+                        <button
+                            onClick={protectedHandleAnalyze}
                             disabled={isAnalyzing}
                             className="flex items-center gap-2 text-xs font-semibold px-2 py-1 bg-tal-purple/10 text-tal-purple rounded-md hover:bg-tal-purple/20 disabled:opacity-50 disabled:cursor-wait"
                             aria-label="Analyseer sessie"
@@ -268,15 +269,15 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
                             {isAnalyzing ? 'Analyseren...' : 'Analyseer'}
                         </button>
                     )}
-                    <button onClick={onDelete} className="text-slate-400 hover:text-red-600" aria-label="Verwijder sessie"><TrashIcon className="h-4 w-4"/></button>
+                    <button onClick={onDelete} className="text-slate-400 hover:text-red-600" aria-label="Verwijder sessie"><TrashIcon className="h-4 w-4" /></button>
                 </div>
             </div>
-            
-             {analysisError && <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">{analysisError}</div>}
-             {analysis && (
+
+            {analysisError && <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">{analysisError}</div>}
+            {analysis && (
                 <div className="mt-4 p-4 bg-slate-50 rounded-lg animate-fade-in border border-slate-200 space-y-4">
                     <h3 className="text-base font-bold text-slate-700">Didactische Analyse</h3>
-                     {analysis.map((section, index) => (
+                    {analysis.map((section, index) => (
                         <FeedbackSectionView key={index} section={section} />
                     ))}
                 </div>
@@ -306,7 +307,7 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
                     <p className="text-sm text-slate-500">{data.sessionHistory.length} sessies</p>
                 </div>
                 <div className="ml-auto flex items-center gap-4 sm:gap-6 text-right flex-shrink-0">
-                     <div>
+                    <div>
                         <p className="text-xs text-slate-500">Gemiddeld</p>
                         <p className="font-semibold text-tal-teal">{avgScore}%</p>
                     </div>
@@ -315,15 +316,15 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
                         <p className="font-semibold text-tal-teal">{learnedWordsCount}</p>
                     </div>
                     <button onClick={() => onViewWords(name, data)} className="hidden sm:flex items-center gap-2 px-3 py-2 bg-white text-slate-600 text-sm font-semibold rounded-lg shadow-sm hover:bg-slate-50 border border-slate-200 transition-all" aria-label={`Woordenlijst van ${name} bekijken`}>
-                       <BookOpenIcon className="h-4 w-4" />
-                       Woordenlijst
+                        <BookOpenIcon className="h-4 w-4" />
+                        Woordenlijst
                     </button>
                     <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 rounded-full hover:bg-slate-100" aria-label="Toon sessies">
                         <ChevronDownIcon className={`h-5 w-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                     </button>
                 </div>
             </div>
-             <div className="px-4 pb-4 sm:hidden">
+            <div className="px-4 pb-4 sm:hidden">
                 <button onClick={() => onViewWords(name, data)} className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-50 text-slate-600 text-sm font-semibold rounded-lg shadow-sm hover:bg-slate-100 border border-slate-200 transition-all" aria-label={`Woordenlijst van ${name} bekijken`}>
                     <BookOpenIcon className="h-4 w-4" />
                     Bekijk woordenlijst
@@ -331,7 +332,7 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
             </div>
             {isExpanded && (
                 <div className="bg-slate-50/70 border-t border-slate-200">
-                     <div className="hidden md:grid grid-cols-4 gap-4 items-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">
+                    <div className="hidden md:grid grid-cols-4 gap-4 items-center px-3 py-2 text-xs font-bold text-slate-500 uppercase">
                         <div className="col-span-1">Sessie details</div>
                         <div>Datum</div>
                         <div>Score</div>
@@ -346,7 +347,7 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
                             requestPassword={requestPassword}
                         />
                     ))}
-                     {data.sessionHistory.length === 0 && <p className="p-4 text-center text-sm text-slate-500">Deze leerling heeft nog geen sessies voltooid.</p>}
+                    {data.sessionHistory.length === 0 && <p className="p-4 text-center text-sm text-slate-500">Deze leerling heeft nog geen sessies voltooid.</p>}
                 </div>
             )}
         </div>
@@ -354,78 +355,80 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
 });
 
 
-const Dashboard: React.FC<DashboardProps> = ({ allUsersData, onBack, onDeleteSession }) => {
-  const [viewingUser, setViewingUser] = useState<[string, UserData] | null>(null);
-  
-  const [passwordPrompt, setPasswordPrompt] = useState<{
-    isVisible: boolean;
-    pendingAction: (() => void) | null;
-    error: string | null;
-  }>({
-    isVisible: false,
-    pendingAction: null,
-    error: null,
-  });
+const Dashboard: React.FC<DashboardProps> = ({ allUsersData, onBack, onDeleteSession, onDeleteUserData, onPracticeWeakWords }) => {
+    const [viewingUser, setViewingUser] = useState<[string, UserData] | null>(null);
 
-  const requestPassword = (action: () => void) => {
-    setPasswordPrompt({ isVisible: true, pendingAction: action, error: null });
-  };
+    const [passwordPrompt, setPasswordPrompt] = useState<{
+        isVisible: boolean;
+        pendingAction: (() => void) | null;
+        error: string | null;
+    }>({
+        isVisible: false,
+        pendingAction: null,
+        error: null,
+    });
 
-  const handlePasswordConfirm = (password: string) => {
-    if (password === 'leerkracht') {
-      passwordPrompt.pendingAction?.();
-      setPasswordPrompt({ isVisible: false, pendingAction: null, error: null });
-    } else {
-      setPasswordPrompt(prev => ({ ...prev, error: 'Onjuist wachtwoord. Probeer opnieuw.' }));
+    const requestPassword = (action: () => void) => {
+        setPasswordPrompt({ isVisible: true, pendingAction: action, error: null });
+    };
+
+    const handlePasswordConfirm = (password: string) => {
+        if (password === 'leerkracht') {
+            passwordPrompt.pendingAction?.();
+            setPasswordPrompt({ isVisible: false, pendingAction: null, error: null });
+        } else {
+            setPasswordPrompt(prev => ({ ...prev, error: 'Onjuist wachtwoord. Probeer opnieuw.' }));
+        }
+    };
+
+    const handlePasswordCancel = () => {
+        setPasswordPrompt({ isVisible: false, pendingAction: null, error: null });
+    };
+
+    const users = Object.entries(allUsersData);
+
+    const handleViewWords = useCallback((name: string, data: UserData) => {
+        setViewingUser([name, data]);
+    }, []);
+
+    if (viewingUser) {
+        return <LearnedWordsView
+            userName={viewingUser[0]}
+            userData={viewingUser[1]}
+            onBack={() => setViewingUser(null)}
+            onDeleteUserData={onDeleteUserData}
+            onPracticeWeakWords={onPracticeWeakWords}
+        />;
     }
-  };
 
-  const handlePasswordCancel = () => {
-    setPasswordPrompt({ isVisible: false, pendingAction: null, error: null });
-  };
+    return (
+        <div className="max-w-5xl mx-auto">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold text-slate-800">Resultaten dashboard</h2>
+                <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 bg-tal-purple text-white font-semibold rounded-lg shadow-md hover:bg-tal-purple-dark transition-all">
+                    <ArrowLeftIcon className="h-5 w-5" />
+                    Nieuwe toets
+                </button>
+            </div>
+            <div className="space-y-4">
+                {users.length > 0 ? (
+                    users.map(([name, data]) => <StudentRow key={name} name={name} data={data} onDeleteSession={onDeleteSession} onViewWords={handleViewWords} requestPassword={requestPassword} />)
+                ) : (
+                    <div className="text-center bg-white rounded-xl shadow-sm p-12">
+                        <p className="text-slate-500">Er zijn nog geen resultaten. Start een nieuwe toets om te beginnen!</p>
+                    </div>
+                )}
+            </div>
 
-  const users = Object.entries(allUsersData);
-  
-  const handleViewWords = useCallback((name: string, data: UserData) => {
-    setViewingUser([name, data]);
-  }, []);
-
-  if (viewingUser) {
-    return <LearnedWordsView 
-                userName={viewingUser[0]} 
-                userData={viewingUser[1]} 
-                onBack={() => setViewingUser(null)} 
-           />;
-  }
-
-  return (
-    <div className="max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-            <h2 className="text-3xl font-bold text-slate-800">Resultaten dashboard</h2>
-            <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 bg-tal-purple text-white font-semibold rounded-lg shadow-md hover:bg-tal-purple-dark transition-all">
-                <ArrowLeftIcon className="h-5 w-5" />
-                Nieuwe toets
-            </button>
-        </div>
-        <div className="space-y-4">
-            {users.length > 0 ? (
-                users.map(([name, data]) => <StudentRow key={name} name={name} data={data} onDeleteSession={onDeleteSession} onViewWords={handleViewWords} requestPassword={requestPassword} />)
-            ) : (
-                <div className="text-center bg-white rounded-xl shadow-sm p-12">
-                    <p className="text-slate-500">Er zijn nog geen resultaten. Start een nieuwe toets om te beginnen!</p>
-                </div>
+            {passwordPrompt.isVisible && (
+                <PasswordPrompt
+                    onConfirm={handlePasswordConfirm}
+                    onCancel={handlePasswordCancel}
+                    error={passwordPrompt.error}
+                />
             )}
         </div>
-
-        {passwordPrompt.isVisible && (
-            <PasswordPrompt
-                onConfirm={handlePasswordConfirm}
-                onCancel={handlePasswordCancel}
-                error={passwordPrompt.error}
-            />
-        )}
-    </div>
-  );
+    );
 };
 
 export default Dashboard;

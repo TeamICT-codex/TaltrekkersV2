@@ -1,5 +1,7 @@
 
+
 export enum AppState {
+  LandingChoice,
   Welcome,
   Dashboard,
   Practice,
@@ -9,24 +11,21 @@ export enum AppState {
 }
 
 export enum WordLevel {
+  // Internal difficulty levels (not shown to user)
   Beginner = 'Beginner',
   Intermediate = 'Gemiddeld',
   Advanced = 'Gevorderd',
-  Schooltaal = 'Algemene Schooltaal',
-  Biologie = 'Biologie',
-  MensEnMaatschappij = 'Mens en Maatschappij',
-  Economie = 'Economie',
-  Wiskunde = 'Wiskunde',
-  Natuurkunde = 'Natuurkunde',
-  PeriodiekSysteem = 'Periodiek systeem',
-  Nederlands = 'Nederlands',
-  Engels = 'Engels',
-  AcademischeWoordenschat = 'Academische Woordenschat',
+  // New user-facing categories
+  Woordenschat2DF = 'Woordenschat 2DF',
+  Woordenschat2AF = 'Woordenschat 2AF',
+  AcademischNederlands = 'Academisch Nederlands',
+  ProfessioneelNederlands = 'Professioneel Nederlands',
+  // Custom uploads
   Custom = 'Eigen Lijst',
 }
 
-export type Finaliteit = 'AF' | 'DF';
-export type Jaargang = '3e' | '4e' | '5e' | '6e';
+export type Finaliteit = 'AF' | 'DF' | 'OKAN';
+export type Jaargang = '3e' | '4e' | '5e' | '6e' | 'Fase 1' | 'Fase 2' | 'Fase 3' | 'Fase 4';
 
 export interface PracticeSettings {
   showSynonymsAntonyms: boolean;
@@ -87,6 +86,7 @@ export interface SessionSummaryData {
   quizResults: QuizResult[];
   words: string[];
   settings: PracticeSettings;
+  earnedXP?: number; // XP earned in this session
 }
 
 export interface UserData {
@@ -101,6 +101,8 @@ export interface UserData {
   avatarId: string;
   // Word list tracking (per file/context)
   wordListProgress?: Record<string, WordListProgress>;
+  // Achievements already shown (to prevent duplicate celebrations)
+  achievementsUnlocked?: string[];
 }
 
 // Tracking welke woorden al geoefend zijn per woordenlijst/bestand

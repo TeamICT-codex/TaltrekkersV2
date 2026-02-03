@@ -43,11 +43,11 @@ const Header: React.FC<HeaderProps> = ({ onLogoClick, onShowLogin, onShowTeacher
               className="h-12 sm:h-14"
             />
             <div>
-              <div className="font-bold text-sm text-brand">
-                TALent achterna!
+              <div className="font-extrabold text-xl sm:text-2xl text-tal-purple-dark leading-none tracking-tight">
+                TALtrekkers
               </div>
-              <div className="font-extrabold text-base sm:text-lg text-brand leading-tight hidden sm:block">
-                TECHNISCH ATHENEUM LOKEREN
+              <div className="font-medium text-xs sm:text-sm text-slate-500 hidden sm:block">
+                onderdeel van <span className="font-bold text-slate-600">het leercollectief</span>
               </div>
             </div>
           </button>
@@ -81,6 +81,18 @@ const Header: React.FC<HeaderProps> = ({ onLogoClick, onShowLogin, onShowTeacher
               </div>
             )}
           </div>
+
+          {/* Teacher Dashboard Button - Only visible for teachers */}
+          {user && role === 'teacher' && onShowTeacherDashboard && (
+            <button
+              onClick={onShowTeacherDashboard}
+              className="flex items-center gap-2 px-3 py-2 bg-tal-gold text-tal-teal-dark font-bold text-sm rounded-lg shadow-md hover:bg-yellow-400 transition active:transform active:scale-95"
+              aria-label="Leerkracht Dashboard"
+            >
+              <span className="text-lg">👨‍🏫</span>
+              <span className="hidden md:inline">Volg leerlingen</span>
+            </button>
+          )}
 
           {/* User / Login Section */}
           <div className="relative">

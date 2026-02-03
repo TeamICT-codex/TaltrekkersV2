@@ -6,26 +6,46 @@ import Dashboard from './components/Dashboard';
 import Welcome from './components/Welcome';
 import PracticeSession from './components/PracticeSession';
 import StoryView from './components/StoryView';
-import { SCHOOLTAAL_WORDS, STORY_MODE_UNLOCK_THRESHOLD } from './constants';
+import { WORD_LISTS, STORY_MODE_UNLOCK_THRESHOLD } from './constants';
 import SessionSummary from './components/SessionSummary';
 import Header from './components/Header';
 // import { ThemeProvider } from './components/ThemeContext'; // Removed, moved to index.tsx
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Login from './components/Login';
 import TeacherDashboard from './components/TeacherDashboard';
+import WelcomeScreen from './components/WelcomeScreen';
 import { saveSessionToSupabase, updateWordProgressInSupabase } from './services/db';
+import ListCompletionCelebration from './components/ListCompletionCelebration';
 
 
 const App: React.FC = () => {
   const [allUsersData, setAllUsersData] = useLocalStorage<AllUsersData>('taaltrekkers-data-v2', {});
 
-  const [appState, setAppState] = useState<AppState>(AppState.Welcome);
+  // Start met LandingChoice als gebruiker niet is ingelogd
+  const [appState, setAppState] = useState<AppState>(AppState.LandingChoice);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [practiceWords, setPracticeWords] = useState<string[]>([]);
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettings | null>(null);
   const [sessionSummaryData, setSessionSummaryData] = useState<SessionSummaryData | null>(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [isAnonymousMode, setIsAnonymousMode] = useState(false);
+  const [celebration, setCelebration] = useState<{
+    show: boolean;
+    listName: string;
+    type: 'practiced' | 'mastered';
+    totalWords: number;
+    bonusPoints: number;
+  } | null>(null);
   const { user } = useAuth(); // Haal ingelogde gebruiker op
+
+  // Redirect naar Welcome als user is ingelogd, anders toon landing choice
+  useEffect(() => {
+    if (user && appState === AppState.LandingChoice) {
+      // User is ingelogd, ga direct naar Welcome (hoofdapp)
+      setAppState(AppState.Welcome);
+      setIsAnonymousMode(false);
+    }
+  }, [user, appState]);
 
   useEffect(() => {
     // Test/Seed data logic
@@ -38,8 +58,9 @@ const App: React.FC = () => {
       if (!testUserData || Object.keys(testUserData.learnedWords || {}).length < STORY_MODE_UNLOCK_THRESHOLD) {
         const learnedWordsObject: UserData['learnedWords'] = { ...(testUserData?.learnedWords || {}) };
 
-        // 1. Voeg eerst de echte woorden toe
-        SCHOOLTAAL_WORDS.forEach(word => {
+        // 1. Voeg woorden toe van alle categorieën
+        const allWords = Object.values(WORD_LISTS).flat();
+        allWords.forEach(word => {
           if (!learnedWordsObject[word.toLowerCase()]) {
             learnedWordsObject[word.toLowerCase()] = {
               definitie: `Definitie van ${word}`,
@@ -204,8 +225,95 @@ const App: React.FC = () => {
       quizResults: quizResults,
       words: practiceWords,
       settings: practiceSettings,
+      earnedXP: sessionScore, // XP earned = session score
     });
     setAppState(AppState.SessionSummary);
+
+    // --- ACHIEVEMENT DETECTION ---
+    // Check if a word list was just completed (practiced or mastered)
+    const listId = practiceSettings.customFileName || practiceSettings.context?.toString() || 'general';
+    const fullWordList = WORD_LISTS[listId] || practiceWords;
+
+    // Get latest user data for achievement check
+    const latestUserData = allUsersData[currentUser];
+    if (latestUserData) {
+      const progress = latestUserData.wordListProgress?.[listId];
+      const previouslyUnlocked = latestUserData.achievementsUnlocked || [];
+      const practicedAchievementId = `${listId}-practiced`;
+      const masteredAchievementId = `${listId}-mastered`;
+
+      // Update latest data after this session
+      const updatedPracticedWords = new Set([
+        ...(progress?.practicedWords || []),
+        ...practiceWords.map(w => w.toLowerCase())
+      ]);
+
+      // Count mastered words (correct > 0, incorrect === 0)
+      const learnedWords = latestUserData.learnedWords || {};
+      let masteredCount = 0;
+      fullWordList.forEach(word => {
+        const wordKey = word.toLowerCase();
+        const wordInfo = learnedWords[wordKey];
+        // Also check if word was just answered correctly in this session
+        const justCorrect = quizResults.find(r => r.word.toLowerCase() === wordKey && r.correct);
+        if ((wordInfo && wordInfo.correct > 0 && wordInfo.incorrect === 0) || justCorrect) {
+          masteredCount++;
+        }
+      });
+
+      const isFullyPracticed = updatedPracticedWords.size >= fullWordList.length;
+      const isFullyMastered = masteredCount >= fullWordList.length;
+
+      // Only show celebration if achievement is new
+      if (isFullyMastered && !previouslyUnlocked.includes(masteredAchievementId)) {
+        // Mastered is higher priority
+        setTimeout(() => {
+          setCelebration({
+            show: true,
+            listName: listId,
+            type: 'mastered',
+            totalWords: fullWordList.length,
+            bonusPoints: 500
+          });
+          // Save achievement
+          setAllUsersData(prev => {
+            const user = prev[currentUser];
+            if (!user) return prev;
+            return {
+              ...prev,
+              [currentUser]: {
+                ...user,
+                achievementsUnlocked: [...(user.achievementsUnlocked || []), masteredAchievementId],
+                points: (user.points || 0) + 500
+              }
+            };
+          });
+        }, 500);
+      } else if (isFullyPracticed && !previouslyUnlocked.includes(practicedAchievementId)) {
+        setTimeout(() => {
+          setCelebration({
+            show: true,
+            listName: listId,
+            type: 'practiced',
+            totalWords: fullWordList.length,
+            bonusPoints: 100
+          });
+          // Save achievement
+          setAllUsersData(prev => {
+            const user = prev[currentUser];
+            if (!user) return prev;
+            return {
+              ...prev,
+              [currentUser]: {
+                ...user,
+                achievementsUnlocked: [...(user.achievementsUnlocked || []), practicedAchievementId],
+                points: (user.points || 0) + 100
+              }
+            };
+          });
+        }, 500);
+      }
+    }
 
     // ONLINE: Sync naar Supabase als ingelogd
     if (user) {
@@ -252,6 +360,24 @@ const App: React.FC = () => {
     setAppState(AppState.Dashboard);
   }, []);
 
+  // Handler for practicing weak words (words with errors)
+  const handlePracticeWeakWords = useCallback((words: string[]) => {
+    if (words.length === 0) return;
+
+    const settings: PracticeSettings = {
+      numberOfWords: words.length,
+      context: 'Zwakke woorden' as any, // Special context for weak words
+      richting: undefined,
+      courseId: undefined,
+      customFileName: 'weak-words',
+      studyMode: 'standard',
+    };
+
+    setPracticeWords(words);
+    setPracticeSettings(settings);
+    setAppState(AppState.Practice);
+  }, []);
+
   const showWelcome = useCallback(() => {
     setAppState(AppState.Welcome);
   }, []);
@@ -272,6 +398,14 @@ const App: React.FC = () => {
         ...prevData,
         [userName]: updatedUser,
       };
+    });
+  }, [setAllUsersData]);
+
+  const deleteUserData = useCallback((userName: string) => {
+    setAllUsersData(prevData => {
+      const newData = { ...prevData };
+      delete newData[userName.toLowerCase().trim()];
+      return newData;
     });
   }, [setAllUsersData]);
 
@@ -350,6 +484,16 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     switch (appState) {
+      case AppState.LandingChoice:
+        return (
+          <WelcomeScreen
+            onLoginClick={() => setShowLogin(true)}
+            onAnonymousClick={() => {
+              setIsAnonymousMode(true);
+              setAppState(AppState.Welcome);
+            }}
+          />
+        );
       case AppState.Practice:
         if (practiceWords.length > 0 && practiceSettings) {
           return <PracticeSession words={practiceWords} settings={practiceSettings} onFinish={finishPractice} />;
@@ -359,7 +503,7 @@ const App: React.FC = () => {
       case AppState.TeacherDashboard:
         return <TeacherDashboard onBack={showWelcome} />;
       case AppState.Dashboard:
-        return <Dashboard allUsersData={allUsersData} onBack={showWelcome} onDeleteSession={deleteSession} />;
+        return <Dashboard allUsersData={allUsersData} onBack={showWelcome} onDeleteSession={deleteSession} onDeleteUserData={deleteUserData} onPracticeWeakWords={handlePracticeWeakWords} />;
       case AppState.Story:
         if (practiceWords.length > 0 && practiceSettings) {
           return <StoryView words={practiceWords} settings={practiceSettings} onFinish={finishStoryChallenge} />;
@@ -398,9 +542,20 @@ const App: React.FC = () => {
             >
               ✕
             </button>
-            <Login />
+            <Login onBack={() => setShowLogin(false)} />
           </div>
         </div>
+      )}
+
+      {/* List Completion Celebration Modal */}
+      {celebration && celebration.show && (
+        <ListCompletionCelebration
+          listName={celebration.listName}
+          achievementType={celebration.type}
+          totalWords={celebration.totalWords}
+          bonusPoints={celebration.bonusPoints}
+          onClose={() => setCelebration(null)}
+        />
       )}
 
       <main className="container mx-auto px-4 py-8 md:py-12 flex-grow">
