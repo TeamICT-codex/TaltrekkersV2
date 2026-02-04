@@ -137,6 +137,36 @@ CREATE TRIGGER on_auth_user_created
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- =====================================================
+-- STAP 7: Feedback tabel voor leerkrachten
+-- =====================================================
+
+-- Feedback tabel (voor leerkracht feedback)
+CREATE TABLE IF NOT EXISTS public.feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+    user_email TEXT NOT NULL,
+    user_name TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS inschakelen
+ALTER TABLE public.feedback ENABLE ROW LEVEL SECURITY;
+
+-- Authenticated users kunnen feedback toevoegen
+DROP POLICY IF EXISTS "Authenticated users can insert feedback" ON public.feedback;
+CREATE POLICY "Anyone can insert feedback" 
+ON public.feedback FOR INSERT 
+WITH CHECK (true);
+
+-- Iedereen kan feedback bekijken (geen geheimen)
+DROP POLICY IF EXISTS "Users can view own feedback" ON public.feedback;
+DROP POLICY IF EXISTS "Teachers can view all feedback" ON public.feedback;
+CREATE POLICY "Anyone can view feedback" 
+ON public.feedback FOR SELECT 
+USING (true);
+
+-- =====================================================
 -- KLAAR! ✅
 -- Je database is nu correct geconfigureerd.
 -- =====================================================

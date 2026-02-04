@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme, Theme } from './ThemeContext';
 import { CheckIcon } from './icons/CheckIcon';
+import FeedbackButton from './FeedbackButton';
+import FeedbackViewer from './FeedbackViewer';
 
 const themeOptions: { id: Theme; label: string }[] = [
   { id: 'default', label: 'Standaard' },
@@ -81,6 +83,12 @@ const Header: React.FC<HeaderProps> = ({ onLogoClick, onShowLogin, onShowTeacher
               </div>
             )}
           </div>
+
+          {/* Feedback Button */}
+          <FeedbackButton />
+
+          {/* Feedback Viewer - Only for teachers */}
+          <FeedbackViewer />
 
           {/* Teacher Dashboard Button - Only visible for teachers */}
           {user && role === 'teacher' && onShowTeacherDashboard && (

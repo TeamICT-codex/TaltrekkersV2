@@ -542,7 +542,13 @@ const App: React.FC = () => {
             >
               ✕
             </button>
-            <Login onBack={() => setShowLogin(false)} />
+            <Login
+              onBack={() => setShowLogin(false)}
+              onTeacherAccess={() => {
+                setShowLogin(false);
+                setAppState(AppState.TeacherDashboard);
+              }}
+            />
           </div>
         </div>
       )}

@@ -80,3 +80,63 @@ export const updateWordProgressInSupabase = async (
         }
     }
 };
+
+/**
+ * Submit feedback from a teacher or authorized user
+ */
+export const submitFeedback = async (
+    userId: string | null,
+    userEmail: string,
+    userName: string,
+    message: string
+): Promise<{ success: boolean; error?: string }> => {
+    try {
+        const { error } = await supabase.from('feedback').insert({
+            user_id: userId,
+            user_email: userEmail,
+            user_name: userName,
+            message: message,
+        });
+
+        if (error) {
+            console.error('Error saving feedback:', error);
+            return { success: false, error: error.message };
+        }
+
+        return { success: true };
+    } catch (err) {
+        console.error('Unexpected error saving feedback:', err);
+        return { success: false, error: 'Er ging iets mis bij het opslaan.' };
+    }
+};
+
+/**
+ * Get all feedback (for teachers/admins)
+ */
+export const getFeedback = async (): Promise<{
+    data: Array<{
+        id: string;
+        user_name: string;
+        user_email: string;
+        message: string;
+        created_at: string;
+    }> | null;
+    error?: string;
+}> => {
+    try {
+        const { data, error } = await supabase
+            .from('feedback')
+            .select('id, user_name, user_email, message, created_at')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching feedback:', error);
+            return { data: null, error: error.message };
+        }
+
+        return { data };
+    } catch (err) {
+        console.error('Unexpected error fetching feedback:', err);
+        return { data: null, error: 'Er ging iets mis.' };
+    }
+};

@@ -78,7 +78,11 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
             }
         };
 
-        if (role === 'teacher') {
+
+        // Check of leerkracht is ingelogd via Supabase OF via simpele wachtwoord
+        const isTeacherViaSession = sessionStorage.getItem('taltrekkers_teacher_session') === 'true';
+
+        if (role === 'teacher' || isTeacherViaSession) {
             fetchSessions();
         } else {
             setLoading(false);
