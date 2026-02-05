@@ -13,26 +13,19 @@ interface QuizViewProps {
 }
 
 const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuizTime }) => {
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
-  const [textAnswer, setTextAnswer] = useState('');
-  const [isAnswered, setIsAnswered] = useState(false);
-  const [score, setScore] = useState(0);
-  const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
-  const [questionStartTime, setQuestionStartTime] = useState(Date.now());
-
-  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
-  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
-
-  const currentQuestion = questions[currentQuestionIndex];
-
-  // Get list of all words for the word bank (for writing questions)
-  const allWords = questions.map(q => q.woord).sort();
+  // State for Hints
+  const [eliminatedOptions, setEliminatedOptions] = useState<number[]>([]);
+  const [simplifiedQuestions, setSimplifiedQuestions] = useState<Record<string, string>>({});
+  const [isSimplifying, setIsSimplifying] = useState(false);
+  const [showSimplified, setShowSimplified] = useState(false);
 
   useEffect(() => {
     setQuestionStartTime(Date.now());
     setFeedbackMessage(null);
     setTextAnswer('');
+    // Reset hints
+    setEliminatedOptions([]);
+    setShowSimplified(false);
   }, [currentQuestionIndex]);
 
   if (!questions || questions.length === 0 || !currentQuestion) {
@@ -47,6 +40,44 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
     );
   }
 
+  const handle5050Hint = () => {
+    if (eliminatedOptions.length > 0 || currentQuestion.type !== QuestionType.MultipleChoice) return;
+
+    const correctIndex = currentQuestion.correctAntwoordIndex;
+    const incorrectIndices = currentQuestion.opties
+      .map((_, idx) => idx)
+      .filter(idx => idx !== correctIndex);
+
+    // Shuffle and pick 2 to eliminate (or fewer if fewer options exist)
+    const shuffled = incorrectIndices.sort(() => 0.5 - Math.random());
+    const toEliminate = shuffled.slice(0, 2);
+    setEliminatedOptions(toEliminate);
+  };
+
+  const handleSimplifyHint = async () => {
+    if (showSimplified) {
+      setShowSimplified(false);
+      return;
+    }
+
+    if (simplifiedQuestions[currentQuestion.vraag]) {
+      setShowSimplified(true);
+      return;
+    }
+
+    setIsSimplifying(true);
+    try {
+      // Use 'fast' model for UI responsiveness
+      const simplified = await import('../services/geminiService').then(m => m.simplifyQuestion(currentQuestion.vraag, { aiModel: 'fast' }));
+      setSimplifiedQuestions(prev => ({ ...prev, [currentQuestion.vraag]: simplified }));
+      setShowSimplified(true);
+    } catch (error) {
+      console.error("Failed to simplify:", error);
+    } finally {
+      setIsSimplifying(false);
+    }
+  };
+
   const processAnswer = async (isCorrect: boolean, userAnswerStr: string) => {
     const seconds = (Date.now() - questionStartTime) / 1000;
     onRecordQuizTime(currentQuestion.woord, seconds);
@@ -55,7 +86,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
 
     if (isCorrect) {
       setScore(prevScore => prevScore + 1);
-      setFeedbackMessage(null);
+      // setFeedbackMessage(null); // Keep previous feedback if any? No, reset.
     } else {
       // Trigger Context-Aware Feedback
       setIsFeedbackLoading(true);
@@ -77,7 +108,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   };
 
   const handleMCAnswer = (answerIndex: number) => {
-    if (isAnswered) return;
+    if (isAnswered || eliminatedOptions.includes(answerIndex)) return;
     setSelectedAnswer(answerIndex);
     const isCorrect = answerIndex === currentQuestion.correctAntwoordIndex;
     const userAnswerStr = currentQuestion.opties[answerIndex];
@@ -93,6 +124,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   const handleNext = () => {
     setIsAnswered(false);
     setSelectedAnswer(null);
+    setFeedbackMessage(null); // Clear feedback
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
@@ -101,6 +133,10 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   };
 
   const getButtonClass = (index: number) => {
+    if (eliminatedOptions.includes(index)) {
+      return "invisible opacity-0 pointer-events-none"; // Hide eliminated options
+    }
+
     if (!isAnswered) {
       return "bg-white/10 border-white/20 hover:bg-white/20 hover:border-white/30 text-slate-100";
     }
@@ -114,15 +150,55 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   };
 
   return (
-    <div className="max-w-3xl mx-auto p-6 sm:p-8 bg-tal-teal text-slate-200 rounded-2xl shadow-2xl">
+    <div className="max-w-3xl mx-auto p-6 sm:p-8 bg-tal-teal text-slate-200 rounded-2xl shadow-2xl relative">
       <div className="flex justify-between items-baseline mb-8">
         <p className="font-semibold text-slate-300">Vraag {currentQuestionIndex + 1} van {questions.length}</p>
-        <p className="font-bold text-lg text-tal-gold">Score: {score}</p>
+
+        <div className="flex items-center gap-4">
+          {/* Hint Buttons */}
+          {!isAnswered && (
+            <div className="flex gap-2">
+              {currentQuestion.type === QuestionType.MultipleChoice && (
+                <button
+                  onClick={handle5050Hint}
+                  disabled={eliminatedOptions.length > 0}
+                  title="50/50: Streep 2 foute antwoorden weg"
+                  className={`p-2 rounded-full bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 border border-blue-500/50 transition-all ${eliminatedOptions.length > 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <span className="text-xs font-bold">50/50</span>
+                </button>
+              )}
+
+              <button
+                onClick={handleSimplifyHint}
+                disabled={isSimplifying}
+                title="Vereenvoudig de vraag"
+                className={`flex items-center gap-1 px-3 py-1 rounded-full border transition-all ${showSimplified ? 'bg-amber-500/20 border-amber-500 text-amber-300' : 'bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-700'}`}
+              >
+                {isSimplifying ? (
+                  <Spinner className="h-3 w-3" />
+                ) : (
+                  <span className="text-lg">🗣️</span>
+                )}
+                <span className="text-xs font-medium">{isSimplifying ? 'Even vereenvoudigen...' : (showSimplified ? 'Originele vraag' : 'Taal te moeilijk?')}</span>
+              </button>
+            </div>
+          )}
+          <p className="font-bold text-lg text-tal-gold ml-2">Score: {score}</p>
+        </div>
       </div>
 
-      <div className="bg-black/20 p-6 rounded-xl mb-8 min-h-[120px] flex items-center justify-center flex-col">
+      <div className="bg-black/20 p-6 rounded-xl mb-8 min-h-[120px] flex items-center justify-center flex-col transition-all duration-300">
         {currentQuestion.type === QuestionType.Writing && <span className="text-sm text-tal-gold font-bold uppercase mb-2 tracking-wider">✍️ Schrijfvraag</span>}
-        <p className="text-xl font-semibold text-center text-white">{currentQuestion.vraag}</p>
+
+        {showSimplified && simplifiedQuestions[currentQuestion.vraag] ? (
+          <div className="animate-fade-in text-center">
+            <span className="text-xs text-amber-300 uppercase font-bold tracking-widest mb-1 block">Vereenvoudigde vraag</span>
+            <p className="text-xl font-semibold text-white/90 italic">"{simplifiedQuestions[currentQuestion.vraag]}"</p>
+          </div>
+        ) : (
+          <p className="text-xl font-semibold text-center text-white">{currentQuestion.vraag}</p>
+        )}
       </div>
 
       {/* Multiple Choice Layout */}
@@ -132,7 +208,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
             <button
               key={index}
               onClick={() => handleMCAnswer(index)}
-              disabled={isAnswered}
+              disabled={isAnswered || eliminatedOptions.includes(index)}
               className={`p-5 rounded-xl border text-center transition-all duration-300 transform focus:scale-[1.02] ${getButtonClass(index)}`}
             >
               <span className="font-medium text-lg">{option}</span>

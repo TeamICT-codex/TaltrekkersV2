@@ -432,6 +432,21 @@ export const generateFeedbackForError = async (
   }
 };
 
+export const simplifyQuestion = async (question: string, settings: Pick<PracticeSettings, 'aiModel'>): Promise<string> => {
+  try {
+    const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
+    const response = await ai.models.generateContent({
+      model,
+      contents: `Herschrijf de volgende vraag in eenvoudige 'Jip en Janneke' taal (A2 niveau) voor iemand die Nederlands leert. Behoud de exacte betekenis en de kernvraag. Geef alleen de nieuwe vraag terug, niets anders. Vraag: "${question}"`,
+      config: { ...aiCallConfig }
+    });
+    return response.text.trim();
+  } catch (error) {
+    console.error("Error simplifying question:", error);
+    throw new Error("Kon de vraag niet vereenvoudigen.");
+  }
+};
+
 
 export const generateStory = async (words: string[], theme: string, settings: Pick<PracticeSettings, 'context' | 'difficulty' | 'aiModel'>): Promise<StoryData> => {
   try {
