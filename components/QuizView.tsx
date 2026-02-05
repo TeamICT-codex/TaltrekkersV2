@@ -13,7 +13,23 @@ interface QuizViewProps {
 }
 
 const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuizTime }) => {
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [textAnswer, setTextAnswer] = useState('');
+  const [isAnswered, setIsAnswered] = useState(false);
+  const [score, setScore] = useState(0);
+  const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
+  const [questionStartTime, setQuestionStartTime] = useState(Date.now());
+
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
+
+  const currentQuestion = questions?.[currentQuestionIndex];
+  // Get list of all words for the word bank (for writing questions)
+  const allWords = questions ? questions.map(q => q.woord).sort() : [];
+
   // State for Hints
+  const [hintsRemaining, setHintsRemaining] = useState(5);
   const [eliminatedOptions, setEliminatedOptions] = useState<number[]>([]);
   const [simplifiedQuestions, setSimplifiedQuestions] = useState<Record<string, string>>({});
   const [isSimplifying, setIsSimplifying] = useState(false);
@@ -41,7 +57,9 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   }
 
   const handle5050Hint = () => {
-    if (eliminatedOptions.length > 0 || currentQuestion.type !== QuestionType.MultipleChoice) return;
+    if (hintsRemaining <= 0 || eliminatedOptions.length > 0 || currentQuestion.type !== QuestionType.MultipleChoice) return;
+
+    setHintsRemaining(prev => prev - 1);
 
     const correctIndex = currentQuestion.correctAntwoordIndex;
     const incorrectIndices = currentQuestion.opties
@@ -65,14 +83,18 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
       return;
     }
 
+    if (hintsRemaining <= 0) return;
+
     setIsSimplifying(true);
     try {
+      setHintsRemaining(prev => prev - 1);
       // Use 'fast' model for UI responsiveness
       const simplified = await import('../services/geminiService').then(m => m.simplifyQuestion(currentQuestion.vraag, { aiModel: 'fast' }));
       setSimplifiedQuestions(prev => ({ ...prev, [currentQuestion.vraag]: simplified }));
       setShowSimplified(true);
     } catch (error) {
       console.error("Failed to simplify:", error);
+      setHintsRemaining(prev => prev + 1); // Refund on error
     } finally {
       setIsSimplifying(false);
     }
@@ -155,14 +177,19 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
         <p className="font-semibold text-slate-300">Vraag {currentQuestionIndex + 1} van {questions.length}</p>
 
         <div className="flex items-center gap-4">
+          <div className={`flex items-center px-3 py-1 rounded-full border ${hintsRemaining > 0 ? 'bg-indigo-900/40 border-indigo-500/30' : 'bg-red-900/20 border-red-500/30'}`}>
+            <span className="text-yellow-400 mr-2 text-sm">💡 Hints:</span>
+            <span className={`font-bold ${hintsRemaining === 0 ? 'text-red-400' : 'text-white'}`}>{hintsRemaining}</span>
+          </div>
+
           {/* Hint Buttons */}
-          {!isAnswered && (
+          {!isAnswered && hintsRemaining > 0 && (
             <div className="flex gap-2">
               {currentQuestion.type === QuestionType.MultipleChoice && (
                 <button
                   onClick={handle5050Hint}
                   disabled={eliminatedOptions.length > 0}
-                  title="50/50: Streep 2 foute antwoorden weg"
+                  title="50/50: Streep 2 foute antwoorden weg (Kost 1 hint)"
                   className={`p-2 rounded-full bg-blue-500/20 text-blue-300 hover:bg-blue-500/40 border border-blue-500/50 transition-all ${eliminatedOptions.length > 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <span className="text-xs font-bold">50/50</span>
@@ -172,7 +199,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
               <button
                 onClick={handleSimplifyHint}
                 disabled={isSimplifying}
-                title="Vereenvoudig de vraag"
+                title={simplifiedQuestions[currentQuestion.vraag] ? "Toon vraag" : "Vereenvoudig de vraag (Kost 1 hint)"}
                 className={`flex items-center gap-1 px-3 py-1 rounded-full border transition-all ${showSimplified ? 'bg-amber-500/20 border-amber-500 text-amber-300' : 'bg-slate-700/50 border-slate-600 text-slate-300 hover:bg-slate-700'}`}
               >
                 {isSimplifying ? (

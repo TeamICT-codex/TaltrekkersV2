@@ -344,7 +344,8 @@ ${contextString}
 2.  **Afleiders:** De foute antwoorden moeten plausibel zijn.
 3.  **Uniek:** Zorg ervoor dat elke vraag uniek is.
 4.  **Schema:** Volg het JSON-schema.
-5.  **BELANGRIJK - Scheidbare werkwoorden:** Als je een gatentekst (invulvraag) maakt voor een scheidbaar werkwoord (bv. 'toelichten', 'opbellen', 'aanwijzen'):
+5.  **Opmaak:** Gebruik GEEN punt aan het einde van de antwoordopties (tenzij het een volledige zin is).
+6.  **BELANGRIJK - Scheidbare werkwoorden:** Als je een gatentekst (invulvraag) maakt voor een scheidbaar werkwoord (bv. 'toelichten', 'opbellen', 'aanwijzen'):
     - Gebruik NIET de infinitief als antwoord
     - Gebruik in plaats daarvan het volledige werkwoord als één van de antwoordopties
     - Voorbeeld FOUT: "Hij wilde het probleem ___." met antwoord "toelichten"
@@ -374,6 +375,10 @@ Genereer een vraag voor elk van de volgende woorden: ${words.join(', ')}.`;
 
       // Mix in Writing questions (approx 1 in 3)
       const processedQuestions = rawQuestions.map((q, index) => {
+        // CLEANUP: Remove trailing periods from options (common AI quirk)
+        const cleanedOptions = q.opties.map(o => o.trim().replace(/\.$/, ''));
+        const currentQ = { ...q, opties: cleanedOptions };
+
         // Every 3rd question is a writing question to test spelling
         if (index % 3 === 0) {
           const targetWord = words[index];
@@ -391,7 +396,7 @@ Genereer een vraag voor elk van de volgende woorden: ${words.join(', ')}.`;
             woord: targetWord // Keep the target word
           };
         }
-        return { ...q, type: QuestionType.MultipleChoice };
+        return { ...currentQ, type: QuestionType.MultipleChoice };
       });
 
       return processedQuestions;

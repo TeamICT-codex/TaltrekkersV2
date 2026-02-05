@@ -19,6 +19,7 @@ Integreer woordenlijst progressie tracking in het TeacherDashboard zodat leerkra
 **Afhankelijkheden:**
 - Vereist Supabase database aanpassingen
 - Lokale `wordListProgress` data moet worden gesynchroniseerd naar cloud
+- **Technische notitie:** Huidige implementatie (`updateWordProgressInSupabase`) doet 1 query per woord (N+1 probleem). Dit veroorzaakt rate limits. Moet worden herschreven naar een batch-operation (RPC call of upsert array) voordat dit live kan.
 
 ---
 

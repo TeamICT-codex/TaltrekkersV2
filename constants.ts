@@ -255,7 +255,7 @@ const WOORDENSCHAT_2DF_WORDS: string[] = [
     'de kwaliteit', 'kwalitatief', 'de kwantiteit', 'het klimaat', 'de kracht', 'de maatregel', 'het materiaal',
     'meten', 'de methode', 'het model', 'de mogelijkheid', 'het onderzoek', 'onderzoeken', 'ontwikkelen',
     'de ontwikkeling', 'de oplossing', 'de oppervlakte', 'de oorzaak', 'de overeenkomst', 'het proces',
-    'het product', 'de productie', 'realiseren (zich)', 'het resultaat', 'de structuur', 'de techniek',
+    'het product', 'de productie', 'zich realiseren', 'het resultaat', 'de structuur', 'de techniek',
     'de theorie', 'toepassen', 'de toepassing', 'de toestand', 'veranderen', 'de verhouding', 'verklaren',
     'het verschil', 'verwerken', 'het volume'
 ];
@@ -301,7 +301,7 @@ const ACADEMISCH_NEDERLANDS_WORDS: string[] = [
     'de coherentie', 'de samenhang', 'de betrouwbaarheid', 'de validiteit', 'de hypothesevorming', 'theoretisch',
     'empirische data', 'argumentatief', 'conceptueel', 'methodologisch', 'analytische vaardigheden', 'conclusief',
     'de probleemstelling', 'de onderzoeksvraag', 'de resultaten', 'de bevindingen', 'interpretatief', 'kritisch',
-    'de systematiek', 'de variatie', 'de contextanalyse', 'de onderzoeksopzet', 'de generaliseerbaarheid'
+    'de systematiek', 'de variatie', 'de contextanalyse', 'het onderzoeksopzet', 'de generaliseerbaarheid'
 ];
 
 const PROFESSIONEEL_NEDERLANDS_WORDS: string[] = [
