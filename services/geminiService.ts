@@ -2,10 +2,10 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { FrayerModelData, StoryData, WordLevel, PracticeSettings, QuizQuestion, SessionRecord, QuestionType } from '../types';
 
-const apiKey = import.meta.env.GEMINI_API_KEY;
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
 if (!apiKey) {
-  console.warn("GEMINI_API_KEY environment variable not set. AI features will not work.");
+  console.warn("VITE_GEMINI_API_KEY environment variable not set. AI features will not work.");
 }
 
 const ai = new GoogleGenAI({ apiKey: apiKey || '' });
