@@ -2,19 +2,13 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { submitFeedback } from '../services/db';
 
-// Feedback wachtwoord voor niet-ingelogde leerkrachten
-const FEEDBACK_PASSWORD = import.meta.env.VITE_FEEDBACK_PASSWORD || 'TALFEEDBACK';
-
 interface FeedbackButtonProps {
     className?: string;
 }
 
 const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
-    const { user, role } = useAuth();
+    const { user } = useAuth();
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isAuthorized, setIsAuthorized] = useState(false);
-    const [passwordInput, setPasswordInput] = useState('');
-    const [passwordError, setPasswordError] = useState('');
 
     // Form state
     const [name, setName] = useState('');
@@ -22,27 +16,12 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
-    const isTeacher = role === 'teacher';
-
     const handleOpenModal = () => {
-        if (isTeacher) {
-            // Ingelogde teachers mogen direct door
-            setIsAuthorized(true);
-            if (user?.email) {
-                setName(user.email.split('@')[0]);
-            }
+        // Pre-fill name if user is logged in
+        if (user?.email) {
+            setName(user.email.split('@')[0]);
         }
         setIsModalOpen(true);
-    };
-
-    const handlePasswordSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (passwordInput === FEEDBACK_PASSWORD) {
-            setIsAuthorized(true);
-            setPasswordError('');
-        } else {
-            setPasswordError('Onjuist wachtwoord.');
-        }
     };
 
     const handleFeedbackSubmit = async (e: React.FormEvent) => {
@@ -66,9 +45,8 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
             setTimeout(() => {
                 setIsModalOpen(false);
                 setMessage('');
+                setName('');
                 setSubmitStatus('idle');
-                setIsAuthorized(isTeacher);
-                setPasswordInput('');
             }, 2000);
         } else {
             setSubmitStatus('error');
@@ -78,10 +56,8 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
     const handleClose = () => {
         setIsModalOpen(false);
         setMessage('');
-        setPasswordInput('');
-        setPasswordError('');
+        setName('');
         setSubmitStatus('idle');
-        setIsAuthorized(isTeacher);
     };
 
     return (
@@ -114,31 +90,7 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
                         </div>
 
                         <div className="p-6">
-                            {!isAuthorized ? (
-                                // Password gate voor niet-ingelogde leerkrachten
-                                <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                                    <p className="text-muted text-sm">
-                                        Ben je leerkracht en wil je feedback geven? Voer het leerkracht-wachtwoord in om door te gaan.
-                                    </p>
-                                    <input
-                                        type="password"
-                                        value={passwordInput}
-                                        onChange={(e) => setPasswordInput(e.target.value)}
-                                        placeholder="Leerkracht-wachtwoord..."
-                                        className="w-full px-4 py-3 border border-themed rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400 bg-surface"
-                                        autoFocus
-                                    />
-                                    {passwordError && (
-                                        <p className="text-red-500 text-sm">{passwordError}</p>
-                                    )}
-                                    <button
-                                        type="submit"
-                                        className="w-full py-3 bg-gradient-to-r from-amber-400 to-orange-400 text-white font-bold rounded-xl hover:from-amber-500 hover:to-orange-500 transition-all"
-                                    >
-                                        Doorgaan →
-                                    </button>
-                                </form>
-                            ) : submitStatus === 'success' ? (
+                            {submitStatus === 'success' ? (
                                 // Success state
                                 <div className="text-center py-8">
                                     <div className="text-6xl mb-4">🎉</div>

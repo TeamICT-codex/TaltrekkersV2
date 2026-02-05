@@ -341,6 +341,13 @@ const Welcome: React.FC<WelcomeProps> = ({ onStartPractice, onShowDashboard, all
                             </h3>
                             <ul className="space-y-4">
                                 <li className="flex items-start gap-4">
+                                    <div className="bg-amber-500 rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0 shadow-sm text-white">!</div>
+                                    <div>
+                                        <h4 className="font-bold text-amber-300">Eerst: vul je naam in</h4>
+                                        <p className="text-sm text-slate-200">Vul hierboven je naam en eventueel moedertaal in, daarna kan je op "Start Oefening" klikken.</p>
+                                    </div>
+                                </li>
+                                <li className="flex items-start gap-4">
                                     <div className="bg-tal-purple rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0 shadow-sm">1</div>
                                     <div>
                                         <h4 className="font-bold">Kies je woorden</h4>

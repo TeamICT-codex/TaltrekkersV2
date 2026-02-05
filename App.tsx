@@ -16,6 +16,7 @@ import TeacherDashboard from './components/TeacherDashboard';
 import WelcomeScreen from './components/WelcomeScreen';
 import { saveSessionToSupabase, updateWordProgressInSupabase } from './services/db';
 import ListCompletionCelebration from './components/ListCompletionCelebration';
+import BetaOverlay from './components/BetaOverlay';
 
 
 const App: React.FC = () => {
@@ -531,6 +532,9 @@ const App: React.FC = () => {
         onShowLogin={() => setShowLogin(true)}
         onShowTeacherDashboard={() => setAppState(AppState.TeacherDashboard)}
       />
+
+      {/* Beta Preview Overlay - shows once for new visitors */}
+      <BetaOverlay />
 
       {showLogin && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
