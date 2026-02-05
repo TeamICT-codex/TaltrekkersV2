@@ -194,7 +194,11 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
                 <XIcon className="h-8 w-8 mr-2" />
                 <p className="font-bold text-xl">Helaas!</p>
               </div>
-              <p className="text-slate-200 mb-4">Het juiste antwoord was: <strong className="text-white">"{currentQuestion.woord}"</strong></p>
+              <p className="text-slate-200 mb-4">Het juiste antwoord was: <strong className="text-white">
+                "{currentQuestion.type === QuestionType.MultipleChoice
+                  ? currentQuestion.opties[currentQuestion.correctAntwoordIndex]
+                  : currentQuestion.woord}"
+              </strong></p>
 
               {/* Context Aware Feedback Area */}
               <div className="bg-red-900/30 p-4 rounded-lg border border-red-500/30 text-sm text-red-100 max-w-xl mx-auto">
