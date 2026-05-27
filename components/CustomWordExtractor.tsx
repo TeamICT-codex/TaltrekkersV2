@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import { extractKeyTerms } from '../services/geminiService';
 import { PracticeSettings, WordListProgress } from '../types';
 import { categorizeError, AppError, ERROR_ICONS } from '../services/errorHandling';
+import { shuffleArray } from '../services/utils';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import Spinner from './Spinner';
 import { SESSION_LENGTH_OPTIONS, MAX_WORDS_PER_SESSION } from '../constants';
 
-declare const pdfjsLib: any;
-declare const mammoth: any;
-declare const XLSX: any;
+// Globale types voor CDN-bibliotheken: zie /types/cdn-libs.d.ts
 
 interface CustomWordExtractorProps {
     onWordsSelected: (words: string[], context: string, fileName?: string, allWords?: string[]) => void;
@@ -23,16 +22,6 @@ type Stage = 'input' | 'analyzing' | 'selection';
 
 const cleanText = (text: string): string => {
     return text.replace(/\s+/g, ' ').trim();
-};
-
-// Fisher-Yates shuffle
-const shuffleArray = <T,>(array: T[]): T[] => {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
 };
 
 const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
@@ -52,8 +41,16 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
     const [fileName, setFileName] = useState<string | null>(null);
     const [showAllWords, setShowAllWords] = useState(false);
     const [lastAnalyzedText, setLastAnalyzedText] = useState<string>(''); // Voor retry
+    const [pdfTruncated, setPdfTruncated] = useState(false);
 
     const { isOnline } = useNetworkStatus();
+
+    const MAX_FILE_SIZE_MB = 10;
+    const ALLOWED_MIME_TYPES: Record<string, string> = {
+        'application/pdf': '.pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    };
 
     const resetState = () => {
         setStage('input');
@@ -63,6 +60,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         setError(null);
         setFileName(null);
         setShowAllWords(false);
+        setPdfTruncated(false);
     };
 
     const extractTextFromPdf = async (file: File): Promise<string> => {
@@ -70,10 +68,14 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         let fullText = '';
         const maxPages = Math.min(pdf.numPages, 20);
 
+        if (pdf.numPages > 20) {
+            setPdfTruncated(true);
+        }
+
         for (let i = 1; i <= maxPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
-            fullText += textContent.items.map((item: any) => item.str).join(' ') + ' ';
+            fullText += textContent.items.map((item) => item.str).join(' ') + ' ';
         }
         return cleanText(fullText);
     };
@@ -90,7 +92,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         let fullText = '';
         workbook.SheetNames.forEach((sheetName: string) => {
             const worksheet = workbook.Sheets[sheetName];
-            const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            const data = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1 });
             fullText += data.flat().filter(cell => typeof cell === 'string' || typeof cell === 'number').join(' ') + ' ';
         });
         return cleanText(fullText);
@@ -100,20 +102,42 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         const file = event.target.files?.[0];
         if (!file) return;
 
+        // Bestandsgrootte validatie
+        if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+            setError(categorizeError(
+                new Error(`Bestand is te groot. Maximum is ${MAX_FILE_SIZE_MB} MB.`),
+                'Bestandsvalidatie'
+            ));
+            event.target.value = '';
+            return;
+        }
+
+        // MIME-type validatie
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        const isValidMime = file.type in ALLOWED_MIME_TYPES;
+        const isValidExt = ext === 'pdf' || ext === 'docx' || ext === 'xlsx';
+        if (!isValidMime && !isValidExt) {
+            setError(categorizeError(
+                new Error('Bestandstype niet ondersteund. Kies een .pdf, .docx of .xlsx bestand.'),
+                'Bestandsvalidatie'
+            ));
+            event.target.value = '';
+            return;
+        }
+
         setError(null);
+        setPdfTruncated(false);
         setStage('analyzing');
         setFileName(file.name);
 
         try {
             let text = '';
-            if (file.type === 'application/pdf') {
+            if (file.type === 'application/pdf' || ext === 'pdf') {
                 text = await extractTextFromPdf(file);
-            } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || ext === 'docx') {
                 text = await extractTextFromDocx(file);
-            } else if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.name.endsWith('.xlsx')) {
-                text = await extractTextFromXlsx(file);
             } else {
-                throw new Error('Bestandstype niet ondersteund. Kies een .pdf, .docx of .xlsx bestand.');
+                text = await extractTextFromXlsx(file);
             }
 
             if (text.length < 10) {
@@ -123,8 +147,8 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
             setInputText(text);
             handleAnalyze(text);
         } catch (err) {
-            console.error(err);
-            setError(err instanceof Error ? err.message : 'Kon het bestand niet lezen.');
+            setError(categorizeError(err, 'Bestand lezen'));
+            event.target.value = '';
             setStage('input');
         }
     };
@@ -177,7 +201,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
 
         if (unpracticedWords.length >= selectedLength) {
             // Genoeg ongeoefende woorden: random selectie daaruit
-            selectedWords = shuffleArray(unpracticedWords).slice(0, selectedLength);
+            selectedWords = shuffleArray<string>(unpracticedWords).slice(0, selectedLength);
         } else {
             // Niet genoeg: pak alle ongeoefende + random uit geoefende
             const neededFromPracticed = selectedLength - unpracticedWords.length;
@@ -228,6 +252,16 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                         </p>
                     )}
                 </div>
+
+                {/* PDF truncatie waarschuwing */}
+                {pdfTruncated && (
+                    <div className="bg-yellow-500/20 border border-yellow-500/30 p-3 rounded-xl">
+                        <p className="text-sm text-yellow-300 flex items-center gap-2">
+                            <span>⚠️</span>
+                            Dit PDF heeft meer dan 20 pagina's. Alleen de eerste 20 pagina's zijn geanalyseerd.
+                        </p>
+                    </div>
+                )}
 
                 {/* Sessielengte Selector */}
                 <div>

@@ -7,34 +7,33 @@ interface FeedbackButtonProps {
 }
 
 const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
-    const { user } = useAuth();
+    const { user, selectedStudent } = useAuth();
     const [isModalOpen, setIsModalOpen] = useState(false);
-
-    // Form state
-    const [name, setName] = useState('');
     const [message, setMessage] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
-    const handleOpenModal = () => {
-        // Pre-fill name if user is logged in
-        if (user?.email) {
-            setName(user.email.split('@')[0]);
-        }
-        setIsModalOpen(true);
+    // De naam komt uit het ingelogde profiel — geen handmatige input meer.
+    // Fallback naar email-prefix als selectedStudent (nog) niet geladen is.
+    const submitterName = selectedStudent?.name || user?.email?.split('@')[0] || '';
+
+    const handleClose = () => {
+        setIsModalOpen(false);
+        setMessage('');
+        setSubmitStatus('idle');
     };
 
     const handleFeedbackSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!message.trim() || !name.trim()) return;
+        if (!message.trim() || !user) return;
 
         setIsSubmitting(true);
         setSubmitStatus('idle');
 
         const result = await submitFeedback(
-            user?.id || null,
-            user?.email || `${name.trim()}@feedback.local`,
-            name.trim(),
+            user.id,
+            user.email || `${submitterName}@feedback.local`,
+            submitterName,
             message.trim()
         );
 
@@ -45,7 +44,6 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
             setTimeout(() => {
                 setIsModalOpen(false);
                 setMessage('');
-                setName('');
                 setSubmitStatus('idle');
             }, 2000);
         } else {
@@ -53,23 +51,16 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
         }
     };
 
-    const handleClose = () => {
-        setIsModalOpen(false);
-        setMessage('');
-        setName('');
-        setSubmitStatus('idle');
-    };
-
     return (
         <>
             <button
-                onClick={handleOpenModal}
+                onClick={() => setIsModalOpen(true)}
                 className={`flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-amber-400 to-orange-400 text-white font-semibold text-sm rounded-lg shadow-md hover:from-amber-500 hover:to-orange-500 transition-all duration-200 active:transform active:scale-95 ${className}`}
                 aria-label="Feedback geven"
                 title="Geef feedback over de app"
             >
-                <span className="text-lg">💬</span>
-                <span className="hidden md:inline">Feedback</span>
+                <span className="text-lg" aria-hidden="true">💬</span>
+                <span>Feedback</span>
             </button>
 
             {isModalOpen && (
@@ -83,14 +74,31 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
                             <button
                                 onClick={handleClose}
                                 className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
-                                title="Sluiten"
+                                aria-label="Sluiten"
                             >
                                 ✕
                             </button>
                         </div>
 
                         <div className="p-6">
-                            {submitStatus === 'success' ? (
+                            {!user ? (
+                                // Niet ingelogd → login-gate
+                                <div className="text-center py-6">
+                                    <div className="text-5xl mb-4">🔐</div>
+                                    <h3 className="text-lg font-bold mb-2">
+                                        Even inloggen om feedback te geven
+                                    </h3>
+                                    <p className="text-muted text-sm mb-5">
+                                        Zo weten we van wie de feedback komt en kunnen we eventueel persoonlijk reageren.
+                                    </p>
+                                    <button
+                                        onClick={handleClose}
+                                        className="px-5 py-2.5 bg-tal-purple text-white font-semibold rounded-lg hover:bg-tal-purple-dark transition"
+                                    >
+                                        Sluiten
+                                    </button>
+                                </div>
+                            ) : submitStatus === 'success' ? (
                                 // Success state
                                 <div className="text-center py-8">
                                     <div className="text-6xl mb-4">🎉</div>
@@ -102,24 +110,18 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
                                     </p>
                                 </div>
                             ) : (
-                                // Feedback form
+                                // Feedback form — naam komt automatisch uit profiel
                                 <form onSubmit={handleFeedbackSubmit} className="space-y-4">
-                                    <p className="text-muted text-sm mb-4">
-                                        Heb je suggesties, problemen gemeld, of ideeën om TALtrekkers te verbeteren? Laat het ons weten!
+                                    <p className="text-muted text-sm">
+                                        Heb je suggesties, problemen gemeld, of ideeën om TALent voor Taal te verbeteren? Laat het ons weten!
                                     </p>
-                                    <div>
-                                        <label className="block text-sm font-medium mb-2">
-                                            Je naam
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            placeholder="Voornaam of volledige naam..."
-                                            className="w-full px-4 py-3 border border-themed rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400 bg-surface"
-                                            required
-                                        />
+
+                                    {/* Read-only sender chip */}
+                                    <div className="flex items-center gap-2 text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2 text-amber-900 dark:text-amber-100">
+                                        <span>📨</span>
+                                        <span>Verstuurd als <strong>{submitterName}</strong></span>
                                     </div>
+
                                     <div>
                                         <label className="block text-sm font-medium mb-2">
                                             Je feedback
@@ -129,6 +131,7 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
                                             onChange={(e) => setMessage(e.target.value)}
                                             placeholder="Wat werkt goed? Wat kan beter? Heb je een suggestie?"
                                             rows={4}
+                                            autoFocus
                                             className="w-full px-4 py-3 border border-themed rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-400 bg-surface resize-none"
                                             required
                                         />
@@ -142,7 +145,7 @@ const FeedbackButton: React.FC<FeedbackButtonProps> = ({ className = '' }) => {
 
                                     <button
                                         type="submit"
-                                        disabled={isSubmitting || !message.trim() || !name.trim()}
+                                        disabled={isSubmitting || !message.trim()}
                                         className="w-full py-3 bg-gradient-to-r from-amber-400 to-orange-400 text-white font-bold rounded-xl hover:from-amber-500 hover:to-orange-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                     >
                                         {isSubmitting ? (

@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "./src",
+    "outDir": "./dist-lib",
+    "stripInternal": true
+  },
+  "include": [
+    "src/reward-sdk.ts",
+    "src/reward-embed.ts",
+    "src/reward-presets.ts",
+    "src/reward-runtime.ts"
+  ]
+}

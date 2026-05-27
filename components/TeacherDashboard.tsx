@@ -5,6 +5,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { format, isToday, isThisWeek, differenceInDays } from 'date-fns';
 import { nl } from 'date-fns/locale';
 
+interface RegisteredStudent {
+    id: string;
+    full_name: string;
+    klas: string | null;
+    created_at: string;
+}
+
 interface SessionWithProfile {
     id: string;
     score: number;
@@ -13,9 +20,13 @@ interface SessionWithProfile {
     completed_at: string;
     context: string;
     file_name: string | null;
+    course_id: string | null;
+    finaliteit: string | null;
+    jaargang: string | null;
     profiles: {
         full_name: string | null;
         email: string;
+        klas: string | null;
     };
 }
 
@@ -35,7 +46,7 @@ interface DashboardProps {
 }
 
 type DateFilter = 'today' | 'week' | 'all';
-type ViewMode = 'sessions' | 'students';
+type ViewMode = 'sessions' | 'students' | 'roster';
 
 const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     const { role } = useAuth();
@@ -47,6 +58,17 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     const [categoryFilter, setCategoryFilter] = useState<string>('all');
     const [viewMode, setViewMode] = useState<ViewMode>('sessions');
     const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+    const [finaliteitFilter, setFinaliteitFilter] = useState<string>('all');
+    const [jaargangFilter, setJaargangFilter] = useState<string>('all');
+    const [klasFilter, setKlasFilter] = useState<string>('all');
+
+    // Leerlingen beheer state
+    const [roster, setRoster] = useState<RegisteredStudent[]>([]);
+    const [rosterLoading, setRosterLoading] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [newKlas, setNewKlas] = useState('');
+    const [addingStudent, setAddingStudent] = useState(false);
+    const [rosterMessage, setRosterMessage] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchSessions = async () => {
@@ -61,16 +83,20 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         completed_at,
                         context,
                         file_name,
+                        course_id,
+                        finaliteit,
+                        jaargang,
                         profiles (
                             email,
-                            full_name
+                            full_name,
+                            klas
                         )
                     `)
                     .order('completed_at', { ascending: false });
 
                 if (error) throw error;
                 setSessions(data as unknown as SessionWithProfile[]);
-            } catch (err: any) {
+            } catch (err: unknown) {
                 console.error("Fout bij ophalen sessies:", err);
                 setError("Kon data niet ophalen. Ben je zeker dat je leerkracht bent?");
             } finally {
@@ -79,22 +105,93 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         };
 
 
-        // Check of leerkracht is ingelogd via Supabase OF via simpele wachtwoord
-        const isTeacherViaSession = sessionStorage.getItem('taltrekkers_teacher_session') === 'true';
-
-        if (role === 'teacher' || isTeacherViaSession) {
+        // Echte autorisatie loopt via Supabase RLS. We tonen de UI alleen aan
+        // gebruikers met role='teacher' OF role='admin' in profiles. Admin is
+        // een super-teacher en erft alle teacher-rechten via is_teacher() in DB.
+        if (role === 'teacher' || role === 'admin') {
             fetchSessions();
+            fetchRoster();
+        } else if (role === null) {
+            // Auth state nog niet geladen — wacht
+            return;
         } else {
             setLoading(false);
-            setError("Geen toegang: Je bent ingelogd als student.");
+            setError('Geen toegang: log in met een leerkracht-account om dit dashboard te zien.');
         }
     }, [role]);
+
+    const fetchRoster = async () => {
+        setRosterLoading(true);
+        const { data } = await supabase
+            .from('registered_students')
+            .select('id, full_name, klas, created_at')
+            .order('klas', { ascending: true, nullsFirst: false })
+            .order('full_name', { ascending: true });
+        if (data) setRoster(data);
+        setRosterLoading(false);
+    };
+
+    const handleAddStudent = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newName.trim()) return;
+        setAddingStudent(true);
+        setRosterMessage(null);
+        const { error } = await supabase
+            .from('registered_students')
+            .insert({ full_name: newName.trim(), klas: newKlas.trim() || null });
+        if (error) {
+            setRosterMessage('❌ Fout bij toevoegen: ' + error.message);
+        } else {
+            setNewName('');
+            setNewKlas('');
+            setRosterMessage('✅ Leerling toegevoegd!');
+            await fetchRoster();
+            setTimeout(() => setRosterMessage(null), 3000);
+        }
+        setAddingStudent(false);
+    };
+
+    const handleDeleteStudent = async (id: string, name: string) => {
+        if (!confirm(`Wil je ${name} verwijderen uit de lijst?`)) return;
+        const { error } = await supabase.from('registered_students').delete().eq('id', id);
+        if (!error) {
+            setRoster(prev => prev.filter(s => s.id !== id));
+        }
+    };
 
     // Get unique categories
     const categories = useMemo(() => {
         const cats = new Set(sessions.map(s => s.file_name || s.context));
         return ['all', ...Array.from(cats)];
     }, [sessions]);
+
+    // Beschikbare jaargangen op basis van geselecteerde finaliteit (uit feitelijke sessiedata)
+    const availableJaargangen = useMemo(() => {
+        const set = new Set<string>();
+        sessions.forEach(s => {
+            if (!s.jaargang) return;
+            if (finaliteitFilter === 'all' || s.finaliteit === finaliteitFilter) {
+                set.add(s.jaargang);
+            }
+        });
+        return Array.from(set).sort();
+    }, [sessions, finaliteitFilter]);
+
+    // Alle klassen die voorkomen in de sessie-data (voor filter dropdown)
+    const availableKlassen = useMemo(() => {
+        const set = new Set<string>();
+        sessions.forEach(s => {
+            if (s.profiles.klas) set.add(s.profiles.klas);
+        });
+        return Array.from(set).sort();
+    }, [sessions]);
+
+    // Reset jaargangFilter als die niet meer beschikbaar is na finaliteit-wijziging
+    useEffect(() => {
+        if (jaargangFilter !== 'all' && !availableJaargangen.includes(jaargangFilter)) {
+            setJaargangFilter('all');
+        }
+    }, [availableJaargangen, jaargangFilter]);
 
     // Filter sessies
     const filteredSessions = useMemo(() => {
@@ -116,16 +213,24 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
             // Category filter
             const matchesCategory = categoryFilter === 'all' || category === categoryFilter;
 
-            return matchesDate && matchesSearch && matchesCategory;
+            // Finaliteit + jaargang filters (skippen sessies zonder structurele context bij actief filter)
+            const matchesFinaliteit = finaliteitFilter === 'all' || session.finaliteit === finaliteitFilter;
+            const matchesJaargang = jaargangFilter === 'all' || session.jaargang === jaargangFilter;
+
+            // Klas filter (gebaseerd op profiles.klas)
+            const matchesKlas = klasFilter === 'all' || session.profiles.klas === klasFilter;
+
+            return matchesDate && matchesSearch && matchesCategory && matchesFinaliteit && matchesJaargang && matchesKlas;
         });
-    }, [sessions, dateFilter, searchQuery, categoryFilter]);
+    }, [sessions, dateFilter, searchQuery, categoryFilter, finaliteitFilter, jaargangFilter, klasFilter]);
 
     // Statistics
     const stats = useMemo(() => {
         const uniqueStudents = new Set(filteredSessions.map(s => s.profiles.email));
         const totalScore = filteredSessions.reduce((sum, s) => sum + s.score, 0);
         const totalQuestions = filteredSessions.reduce((sum, s) => sum + s.total_questions, 0);
-        const avgPercent = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
+        // Cap op 100% — oude data kan score > total_questions hebben door bugs in vorige scoring-logica.
+        const avgPercent = totalQuestions > 0 ? Math.min(100, Math.round((totalScore / totalQuestions) * 100)) : 0;
 
         // Most practiced category
         const categoryCount: Record<string, number> = {};
@@ -158,7 +263,8 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         return Array.from(studentMap.entries()).map(([email, studentSessions]) => {
             const totalScore = studentSessions.reduce((sum, s) => sum + s.score, 0);
             const totalQuestions = studentSessions.reduce((sum, s) => sum + s.total_questions, 0);
-            const avgScore = totalQuestions > 0 ? Math.round((totalScore / totalQuestions) * 100) : 0;
+            // Cap op 100% — bescherming tegen historische data corruption (score > total_questions).
+            const avgScore = totalQuestions > 0 ? Math.min(100, Math.round((totalScore / totalQuestions) * 100)) : 0;
             const lastActive = new Date(Math.max(...studentSessions.map(s => new Date(s.completed_at).getTime())));
             const daysInactive = differenceInDays(new Date(), lastActive);
 
@@ -288,6 +394,46 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                     ))}
                 </select>
 
+                {/* Finaliteit Filter */}
+                <select
+                    value={finaliteitFilter}
+                    onChange={(e) => setFinaliteitFilter(e.target.value)}
+                    className="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-tal-purple focus:border-transparent outline-none text-sm"
+                >
+                    <option value="all">🎯 Alle finaliteiten</option>
+                    <option value="AF">AF — Arbeidsfinaliteit</option>
+                    <option value="DF">DF — Dubbele finaliteit</option>
+                    <option value="OKAN">OKAN</option>
+                </select>
+
+                {/* Jaargang Filter (alleen tonen als er jaargangen beschikbaar zijn) */}
+                {availableJaargangen.length > 0 && (
+                    <select
+                        value={jaargangFilter}
+                        onChange={(e) => setJaargangFilter(e.target.value)}
+                        className="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-tal-purple focus:border-transparent outline-none text-sm"
+                    >
+                        <option value="all">📚 Alle jaargangen</option>
+                        {availableJaargangen.map(j => (
+                            <option key={j} value={j}>{j}</option>
+                        ))}
+                    </select>
+                )}
+
+                {/* Klas Filter (alleen tonen als er klassen bekend zijn) */}
+                {availableKlassen.length > 0 && (
+                    <select
+                        value={klasFilter}
+                        onChange={(e) => setKlasFilter(e.target.value)}
+                        className="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-tal-purple focus:border-transparent outline-none text-sm"
+                    >
+                        <option value="all">👥 Alle klassen</option>
+                        {availableKlassen.map(k => (
+                            <option key={k} value={k}>{k}</option>
+                        ))}
+                    </select>
+                )}
+
                 {/* View Mode Toggle */}
                 <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
                     <button
@@ -301,6 +447,12 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${viewMode === 'students' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}
                     >
                         👥 Leerlingen
+                    </button>
+                    <button
+                        onClick={() => setViewMode('roster')}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${viewMode === 'roster' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}
+                    >
+                        📝 Klaslijst
                     </button>
                 </div>
 
@@ -376,6 +528,99 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            ) : viewMode === 'roster' ? (
+                /* KLASLIJST VIEW */
+                <div className="space-y-6">
+                    {/* Toevoegen form */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                        <h2 className="text-lg font-bold text-slate-800 mb-4">➕ Leerling toevoegen</h2>
+                        <form onSubmit={handleAddStudent} className="flex flex-wrap gap-3 items-end">
+                            <div className="flex-1 min-w-[180px]">
+                                <label className="block text-sm font-semibold text-slate-600 mb-1">Naam *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={newName}
+                                    onChange={e => setNewName(e.target.value)}
+                                    placeholder="Voornaam Achternaam"
+                                    className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-tal-purple focus:border-transparent outline-none text-sm"
+                                />
+                            </div>
+                            <div className="w-36">
+                                <label className="block text-sm font-semibold text-slate-600 mb-1">Klas <span className="font-normal text-slate-400">(optioneel)</span></label>
+                                <input
+                                    type="text"
+                                    value={newKlas}
+                                    onChange={e => setNewKlas(e.target.value)}
+                                    placeholder="bv. 3AF"
+                                    className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-tal-purple focus:border-transparent outline-none text-sm"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={addingStudent || !newName.trim()}
+                                className="px-5 py-2.5 bg-tal-purple text-white font-bold rounded-lg hover:bg-tal-purple-dark transition disabled:opacity-50 text-sm"
+                            >
+                                {addingStudent ? 'Toevoegen...' : 'Toevoegen'}
+                            </button>
+                        </form>
+                        {rosterMessage && (
+                            <p className={`mt-3 text-sm font-medium ${rosterMessage.startsWith('✅') ? 'text-green-700' : 'text-red-600'}`}>
+                                {rosterMessage}
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Leerlingenlijst */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                            <h2 className="text-lg font-bold text-slate-800">📋 Geregistreerde leerlingen ({roster.length})</h2>
+                        </div>
+                        {rosterLoading ? (
+                            <div className="flex justify-center py-12">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-tal-purple" />
+                            </div>
+                        ) : roster.length === 0 ? (
+                            <div className="text-center py-12 text-slate-400">
+                                Nog geen leerlingen toegevoegd.
+                            </div>
+                        ) : (
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-50 text-slate-500 font-semibold text-xs uppercase tracking-wider border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-3">Naam</th>
+                                        <th className="px-6 py-3">Klas</th>
+                                        <th className="px-6 py-3">Toegevoegd</th>
+                                        <th className="px-6 py-3"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {roster.map(s => (
+                                        <tr key={s.id} className="hover:bg-slate-50/50 transition">
+                                            <td className="px-6 py-3 font-medium text-slate-800">{s.full_name}</td>
+                                            <td className="px-6 py-3">
+                                                {s.klas ? (
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-tal-purple/10 text-tal-purple-dark">{s.klas}</span>
+                                                ) : <span className="text-slate-400 text-xs">—</span>}
+                                            </td>
+                                            <td className="px-6 py-3 text-slate-400 text-sm">
+                                                {format(new Date(s.created_at), 'd MMM yyyy', { locale: nl })}
+                                            </td>
+                                            <td className="px-6 py-3 text-right">
+                                                <button
+                                                    onClick={() => handleDeleteStudent(s.id, s.full_name)}
+                                                    className="text-red-400 hover:text-red-600 text-sm font-medium transition"
+                                                >
+                                                    Verwijderen
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </div>
             ) : (

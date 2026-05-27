@@ -12,6 +12,10 @@ interface State {
 }
 
 class ErrorBoundary extends Component<Props, State> {
+    declare state: State;
+    declare props: Readonly<Props>;
+    declare setState: Component<Props, State>['setState'];
+
     constructor(props: Props) {
         super(props);
         this.state = {
@@ -36,6 +40,7 @@ class ErrorBoundary extends Component<Props, State> {
 
     public render() {
         if (this.state.hasError) {
+            const isDev = import.meta.env.DEV;
             return (
                 <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans text-slate-800">
                     <div className="max-w-2xl w-full bg-white rounded-xl shadow-lg border border-red-100 overflow-hidden">
@@ -44,15 +49,17 @@ class ErrorBoundary extends Component<Props, State> {
                                 <span>🚫</span> Oeps, er ging iets mis!
                             </h1>
                             <p className="text-red-600 mt-2">
-                                De applicatie is onverwacht gestopt. Hier is de technische foutmelding:
+                                De applicatie is onverwacht gestopt. Probeer de pagina te verversen.
                             </p>
                         </div>
 
                         <div className="p-6 space-y-4">
-                            <div className="bg-slate-900 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed">
-                                <p className="text-red-300 font-bold mb-2">Error: {this.state.error?.toString()}</p>
-                                <pre className="text-slate-400 whitespace-pre-wrap">{this.state.errorInfo?.componentStack}</pre>
-                            </div>
+                            {isDev && (
+                                <div className="bg-slate-900 text-slate-50 p-4 rounded-lg overflow-x-auto text-sm font-mono leading-relaxed">
+                                    <p className="text-red-300 font-bold mb-2">Error: {this.state.error?.toString()}</p>
+                                    <pre className="text-slate-400 whitespace-pre-wrap">{this.state.errorInfo?.componentStack}</pre>
+                                </div>
+                            )}
 
                             <div className="flex justify-between items-center pt-4">
                                 <button

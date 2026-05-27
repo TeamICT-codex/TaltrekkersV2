@@ -1,7 +1,6 @@
-
-
 export enum AppState {
   LandingChoice,
+  Onboarding,
   Welcome,
   Dashboard,
   Practice,
@@ -25,7 +24,7 @@ export enum WordLevel {
 }
 
 export type Finaliteit = 'AF' | 'DF' | 'OKAN';
-export type Jaargang = '3e' | '4e' | '5e' | '6e' | 'Fase 1' | 'Fase 2' | 'Fase 3' | 'Fase 4';
+export type Jaargang = '3e' | '4e' | '5e' | '5 Duaal' | '6e' | '6 Duaal' | '7e' | 'Fase 1' | 'Fase 2' | 'Fase 3' | 'Fase 4';
 
 export interface PracticeSettings {
   showSynonymsAntonyms: boolean;
@@ -41,6 +40,7 @@ export interface PracticeSettings {
   richting?: string; // De volledige naam van de richting, bv. 'Elektriciteit'
   courseId?: string; // De unieke ID van de cursus, bv. 'AF-3e-ELEK'
   customFileName?: string; // De naam van het opgeladen bestand
+  enableTTS?: boolean; // TTS audio vooraf genereren voor alle woorden
 }
 
 export interface QuizResult {
@@ -86,7 +86,11 @@ export interface SessionSummaryData {
   quizResults: QuizResult[];
   words: string[];
   settings: PracticeSettings;
-  earnedXP?: number; // XP earned in this session
+  earnedXP?: number; // XP earned in this session (al inclusief eventuele bonus)
+  /** True als deze sessie een "oefen zwakke woorden"-sessie was — dan kreeg
+   *  speler 2x XP en gold een soepelere Sneek-drempel. Wordt door
+   *  SessionSummary gebruikt om een speciale beloningsbadge te tonen. */
+  weakWordsBonus?: boolean;
 }
 
 export interface UserData {
@@ -99,6 +103,13 @@ export interface UserData {
   lastPracticeDate: string | null; // ISO Date string (YYYY-MM-DD)
   points: number;
   avatarId: string;
+  // Reward tokens — verdiend bij sessie ≥ 80% of per 100 XP, in te ruilen voor Sneek/Droak.
+  snakeTokens?: number;
+  dragonTokens?: number;
+  // Drempel-tracker voor "elke 100 XP = 1 token van elk soort". Onthoudt het laatste
+  // veelvoud van 100 waarop tokens zijn uitgekeerd, zodat we bij elke nieuwe sessie
+  // alleen tokens toevoegen voor pas-overschreden drempels.
+  lastXpRewardCheckpoint?: number;
   // Word list tracking (per file/context)
   wordListProgress?: Record<string, WordListProgress>;
   // Achievements already shown (to prevent duplicate celebrations)
@@ -150,12 +161,6 @@ export interface ReadingStrategyItem {
 export interface StoryData {
   title: string;
   story: string;
-}
-
-export interface SubjectSpecificCourse {
-  id: string;
-  name: string;
-  url?: string;
 }
 
 export interface Avatar {

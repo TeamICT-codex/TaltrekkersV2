@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { UserData, WordMasteryInfo, WordLevel } from '../types';
-import { WORD_LISTS } from '../constants';
+import { WORD_LISTS_METADATA } from '../constants';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
 import { DocumentArrowDownIcon } from './icons/DocumentArrowDownIcon';
 import { PencilIcon } from './icons/PencilIcon';
@@ -8,9 +8,7 @@ import Spinner from './Spinner';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { TrashIcon } from './icons/TrashIcon';
 
-// Declare global variables for libraries loaded via script tags
-declare const html2canvas: any;
-declare const jspdf: any;
+// Globale types voor CDN-bibliotheken: zie /types/cdn-libs.d.ts
 
 interface LearnedWordsViewProps {
     userName: string;
@@ -50,7 +48,7 @@ const PrintTable: React.FC<{ words: [string, WordMasteryInfo][]; userName: strin
         <div className="my-8 text-black">
             <h1 className="text-2xl font-bold">Woordenlijst voor <span className="capitalize">{userName}</span></h1>
             <p className="text-lg font-semibold text-slate-700">Onderwerp: {subject}</p>
-            <p className="text-sm text-slate-600">Gegenereerd door TALtrekkers Woordenschat Trainer op {new Date().toLocaleDateString('nl-NL')}</p>
+            <p className="text-sm text-slate-600">Gegenereerd door TALent voor Taal op {new Date().toLocaleDateString('nl-NL')}</p>
         </div>
         <div className="p-4 border-b-2 border-slate-200">
             <div className="grid grid-cols-2 gap-4">
@@ -230,7 +228,7 @@ const SubjectWordsGroup: React.FC<{
 
     return (
         <div className="bg-white rounded-xl shadow-sm transition-shadow hover:shadow-md">
-            <div className="p-4 flex items-center cursor-pointer" onClick={onToggle}>
+            <div className="p-4 flex items-center cursor-pointer" onClick={onToggle} onKeyDown={(e) => e.key === 'Enter' && onToggle()} role="button" tabIndex={0} aria-expanded={isExpanded}>
                 <div className="flex items-center gap-4 flex-grow">
                     <SubjectIcon subject={subject} />
                     <div className="flex-grow">
@@ -386,7 +384,7 @@ const LearnedWordsView: React.FC<LearnedWordsViewProps> = ({ userName, userData,
 
     // Calculate weak words (words with at least one incorrect answer)
     const weakWords = useMemo(() => {
-        const learnedWords = userData.learnedWords || {};
+        const learnedWords: Record<string, WordMasteryInfo> = userData.learnedWords || {};
         return Object.entries(learnedWords)
             .filter(([, info]) => info.incorrect > 0)
             .map(([word]) => word);
@@ -432,7 +430,7 @@ const LearnedWordsView: React.FC<LearnedWordsViewProps> = ({ userName, userData,
         // Check if subject matches a WordLevel enum value (predefined lists)
         const wordLevelValues = Object.values(WordLevel);
         if (wordLevelValues.includes(subject as WordLevel)) {
-            return WORD_LISTS[subject]?.length;
+            return WORD_LISTS_METADATA[subject]?.length;
         }
         return undefined; // Custom lists don't have a predefined total
     };
@@ -444,14 +442,20 @@ const LearnedWordsView: React.FC<LearnedWordsViewProps> = ({ userName, userData,
                     Woordenlijst: <span className="text-tal-teal capitalize">{userName}</span>
                 </h2>
                 <div className="flex items-center gap-2 flex-wrap">
-                    {/* Practice weak words button */}
+                    {/* Practice weak words button — 2x XP bonus zichtbaar
+                        zodat de speler weet dat dit extra beloond wordt. */}
                     {onPracticeWeakWords && weakWords.length > 0 && (
                         <button
                             onClick={() => onPracticeWeakWords(weakWords)}
-                            className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-800 font-semibold rounded-lg shadow-sm hover:bg-amber-200 transition-all border border-amber-300"
-                            title={`Oefen ${weakWords.length} woorden waar je fouten in hebt gemaakt`}
+                            className="relative flex items-center gap-2 pl-4 pr-3 py-2 text-white font-semibold rounded-lg shadow-md hover:scale-[1.03] active:scale-95 transition-transform"
+                            // Inline gradient — Tailwind CDN ondersteunt geen gradient utilities
+                            style={{ background: 'linear-gradient(90deg, #a855f7 0%, #ec4899 100%)' }}
+                            title={`Oefen ${weakWords.length} woorden waar je fouten in maakte. Dubbel XP + soepelere Sneek-drempel!`}
                         >
-                            🔄 Oefen zwakke woorden ({weakWords.length})
+                            <span>🎯 Oefen zwakke woorden ({weakWords.length})</span>
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white/25 text-[10px] font-extrabold tracking-wide">
+                                2× XP
+                            </span>
                         </button>
                     )}
                     {onDeleteUserData && (
@@ -460,8 +464,8 @@ const LearnedWordsView: React.FC<LearnedWordsViewProps> = ({ userName, userData,
                             className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 font-semibold rounded-lg shadow-sm hover:bg-red-200 transition-all"
                             title="Verwijder al mijn gegevens"
                         >
-                            <TrashIcon className="h-5 w-5" />
-                            <span className="hidden sm:inline">Verwijder mijn gegevens</span>
+                            <TrashIcon className="h-5 w-5" aria-hidden="true" />
+                            <span>Verwijder mijn gegevens</span>
                         </button>
                     )}
                     <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 bg-tal-purple text-white font-semibold rounded-lg shadow-md hover:bg-tal-purple-dark transition-all">

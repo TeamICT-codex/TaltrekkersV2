@@ -1,15 +1,30 @@
 
 import { supabase } from './supabase';
-import { QuizResult, PracticeSettings, SessionTimingData } from '../types';
+import { QuizResult, PracticeSettings, SessionTimingData, Finaliteit, Jaargang } from '../types';
 
-export const saveSessionToSupabase = async (
-    userId: string,
-    context: string,
-    fileName: string | undefined,
-    score: number,
-    quizResults: QuizResult[],
-    durationSeconds: number
-) => {
+interface SaveSessionParams {
+    userId: string;
+    context: string;
+    fileName?: string;
+    courseId?: string;
+    finaliteit?: string;
+    jaargang?: string;
+    score: number;
+    quizResults: QuizResult[];
+    durationSeconds: number;
+}
+
+export const saveSessionToSupabase = async ({
+    userId,
+    context,
+    fileName,
+    courseId,
+    finaliteit,
+    jaargang,
+    score,
+    quizResults,
+    durationSeconds,
+}: SaveSessionParams) => {
     if (!userId) return;
 
     try {
@@ -17,6 +32,9 @@ export const saveSessionToSupabase = async (
             user_id: userId,
             context: context,
             file_name: fileName || null,
+            course_id: courseId || null,
+            finaliteit: finaliteit || null,
+            jaargang: jaargang || null,
             score: score,
             total_questions: quizResults.length,
             duration_seconds: Math.floor(durationSeconds),
@@ -32,53 +50,226 @@ export const saveSessionToSupabase = async (
 
 export const updateWordProgressInSupabase = async (
     userId: string,
-    listId: string, // Context of bestandsnaam
+    listId: string,
     words: string[]
 ) => {
-    if (!userId) return;
+    if (!userId || words.length === 0) return;
 
-    // Voor elk woord, update of insert in de database (upsert)
-    // We doen dit simpelweg door practiced_count +1 te doen als het bestaat
-    // Supabase upsert is hier handig voor.
+    // Batch upsert via RPC - één DB call voor alle woorden
+    const { error } = await supabase.rpc('upsert_word_progress', {
+        p_user_id: userId,
+        p_list_id: listId,
+        p_words: words,
+    });
 
-    // Omdat we 'practiced_count' willen incrementen, is upsert met conflict niet direct triviaal voor increment.
-    // Maar we kunnen een stored procedure gebruiken of gewoon kijken of het bestaat.
-    // Voor eenvoud nu: we proberen te inserten, als conflict (reeds geoefend), dan laten we het zo (of we zouden update query moeten doen).
-
-    // Betere aanpak voor MVP: Selecteer bestaande, update count, of insert nieuwe.
-    // Omdat we meerdere woorden in 1 keer doen, loopen we er doorheen #performantie kan beter maar ok voor now.
-
-    for (const word of words) {
-        try {
-            // Check if exists
-            const { data: existing } = await supabase
-                .from('word_progress')
-                .select('id, practiced_count')
-                .eq('user_id', userId)
-                .eq('word', word)
-                .eq('list_id', listId)
-                .single();
-
-            if (existing) {
-                await supabase.from('word_progress')
-                    .update({
-                        practiced_count: (existing.practiced_count || 1) + 1,
-                        last_practiced_at: new Date().toISOString()
-                    })
-                    .eq('id', existing.id);
-            } else {
-                await supabase.from('word_progress').insert({
-                    user_id: userId,
-                    word: word,
-                    list_id: listId,
-                    practiced_count: 1,
-                    last_practiced_at: new Date().toISOString()
-                });
-            }
-        } catch (err) {
-            console.error(`Failed to update progress for word: ${word}`, err);
-        }
+    if (error) {
+        console.error('Error updating word progress:', error);
     }
+};
+
+/**
+ * Update de klas van het ingelogde profiel (zelf-service vanuit Welcome).
+ * Lege string of whitespace wordt opgeslagen als NULL zodat een leerling
+ * de klas ook weer kan leegmaken.
+ */
+export const updateProfileKlas = async (
+    userId: string,
+    klas: string
+): Promise<{ success: boolean; error?: string }> => {
+    if (!userId) return { success: false, error: 'Niet ingelogd.' };
+    const value = klas.trim() || null;
+    const { error } = await supabase
+        .from('profiles')
+        .update({ klas: value })
+        .eq('id', userId);
+    if (error) {
+        console.error('Error updating profile klas:', error);
+        return { success: false, error: error.message };
+    }
+    return { success: true };
+};
+
+/**
+ * Sla de gestructureerde klas-info op (finaliteit + jaargang) bij de eerste-login
+ * onboarding-flow. Genereert automatisch een display-string voor `klas` zodat
+ * bestaande TeacherDashboard-filters blijven werken (bv. "AF 6 Duaal").
+ */
+export const updateProfileKlasInfo = async (
+    userId: string,
+    finaliteit: Finaliteit,
+    jaargang: Jaargang
+): Promise<{ success: boolean; error?: string }> => {
+    if (!userId) return { success: false, error: 'Niet ingelogd.' };
+    const klas = `${finaliteit} ${jaargang}`;
+    const { error } = await supabase
+        .from('profiles')
+        .update({ finaliteit, jaargang, klas })
+        .eq('id', userId);
+    if (error) {
+        console.error('Error updating profile klas info:', error);
+        return { success: false, error: error.message };
+    }
+    return { success: true };
+};
+
+/**
+ * Upgrade het ingelogde profiel naar 'teacher' rol, mits de meegegeven code
+ * matched met de server-side opgeslagen leerkracht-code. De validatie zit
+ * volledig in de Postgres-functie `upgrade_to_teacher` — client kan dus geen
+ * code afdwingen of bypassen.
+ */
+export const upgradeToTeacher = async (
+    code: string
+): Promise<{ success: boolean; error?: string; alreadyTeacher?: boolean }> => {
+    const { data, error } = await supabase.rpc('upgrade_to_teacher', {
+        provided_code: code,
+    });
+
+    if (error) {
+        console.error('upgradeToTeacher RPC error:', error);
+        return { success: false, error: error.message };
+    }
+
+    // De RPC retourneert { success, error?, already_teacher? }
+    const result = data as { success: boolean; error?: string; already_teacher?: boolean };
+    if (!result.success) {
+        return { success: false, error: result.error || 'Onbekende fout.' };
+    }
+
+    return { success: true, alreadyTeacher: result.already_teacher };
+};
+
+// =====================================================
+// Game settings (admin-configureerbare game-content)
+// =====================================================
+
+export type GameTheme = 'ember' | 'aurora' | 'forest' | 'midnight' | 'sunrise';
+
+export interface GameSettings {
+    snake_text: string | null;
+    dragon_text: string | null;
+    snake_theme: GameTheme;
+    dragon_theme: GameTheme;
+}
+
+/**
+ * Lees de globale game-instellingen (singleton row).
+ * Iedereen die ingelogd is mag lezen — game-launchers gebruiken dit.
+ */
+export const fetchGameSettings = async (): Promise<{
+    settings: GameSettings | null;
+    error?: string;
+}> => {
+    const { data, error } = await supabase
+        .from('game_settings')
+        .select('snake_text, dragon_text, snake_theme, dragon_theme')
+        .eq('id', 'global')
+        .single();
+
+    if (error) {
+        console.warn('fetchGameSettings:', error.message);
+        return { settings: null, error: error.message };
+    }
+    return { settings: data as GameSettings };
+};
+
+/**
+ * Update de globale game-instellingen. RLS staat dit alleen toe voor admin.
+ */
+export const updateGameSettings = async (
+    userId: string,
+    settings: Partial<GameSettings>,
+): Promise<{ success: boolean; error?: string }> => {
+    const { error } = await supabase
+        .from('game_settings')
+        .update({ ...settings, updated_at: new Date().toISOString(), updated_by: userId })
+        .eq('id', 'global');
+    if (error) {
+        console.error('updateGameSettings:', error);
+        return { success: false, error: error.message };
+    }
+    return { success: true };
+};
+
+/**
+ * Stats die we cloud-syncen tussen browser/device en Supabase.
+ * Komt overeen met de relevante velden uit `UserData` (lokaal) maar
+ * dan in snake_case zoals in de DB.
+ */
+export interface ProfileStats {
+    points: number;
+    streak: number;
+    last_practice_date: string | null;
+    snake_tokens: number;
+    dragon_tokens: number;
+    last_xp_reward_checkpoint: number;
+    avatar_id: string;
+    welcome_bonus_granted: boolean;
+}
+
+/**
+ * Lees de cloud-stats van het ingelogde profiel. Wordt aangeroepen bij login
+ * zodat de UI gehydrateerd kan worden met de meest recente waarden uit de DB
+ * (in plaats van wat toevallig in deze browser's localStorage zit).
+ */
+export const fetchProfileStats = async (
+    userId: string
+): Promise<{ stats: ProfileStats | null; error?: string }> => {
+    if (!userId) return { stats: null, error: 'Niet ingelogd.' };
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('points, streak, last_practice_date, snake_tokens, dragon_tokens, last_xp_reward_checkpoint, avatar_id, welcome_bonus_granted')
+        .eq('id', userId)
+        .single();
+
+    if (error) {
+        console.error('Error fetching profile stats:', error);
+        return { stats: null, error: error.message };
+    }
+    return { stats: data as ProfileStats };
+};
+
+/**
+ * Push de huidige lokale stats naar de DB. Debounced aanroepen vanuit
+ * useUserData (of een wrapper) zodat we niet bij elke kleine setUserData
+ * een netwerkcall maken.
+ */
+export const upsertProfileStats = async (
+    userId: string,
+    stats: Partial<ProfileStats>
+): Promise<{ success: boolean; error?: string }> => {
+    if (!userId) return { success: false, error: 'Niet ingelogd.' };
+    const { error } = await supabase
+        .from('profiles')
+        .update(stats)
+        .eq('id', userId);
+    if (error) {
+        console.error('Error upserting profile stats:', error);
+        return { success: false, error: error.message };
+    }
+    return { success: true };
+};
+
+/**
+ * Update de moedertaal van het ingelogde profiel. Lege string wordt als NULL
+ * opgeslagen zodat de leerling het ook kan leegmaken. Optioneel veld — AI
+ * gebruikt het voor betere uitleg, maar werkt ook zonder.
+ */
+export const updateProfileNativeLanguage = async (
+    userId: string,
+    nativeLanguage: string
+): Promise<{ success: boolean; error?: string }> => {
+    if (!userId) return { success: false, error: 'Niet ingelogd.' };
+    const value = nativeLanguage.trim() || null;
+    const { error } = await supabase
+        .from('profiles')
+        .update({ native_language: value })
+        .eq('id', userId);
+    if (error) {
+        console.error('Error updating native language:', error);
+        return { success: false, error: error.message };
+    }
+    return { success: true };
 };
 
 /**

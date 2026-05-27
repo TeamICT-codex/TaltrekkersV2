@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { FrayerModelData, PracticeSettings } from '../types';
-import { translateFrayerModel, playTextAsSpeech } from '../services/geminiService';
+import { translateFrayerModel, playCachedOrGenerateTTS } from '../services/geminiService';
 import Spinner from './Spinner';
 
 interface FrayerModelViewProps {
@@ -76,9 +76,10 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
 
   const currentModel = models[currentIndex];
   const currentWord = words[currentIndex];
+  const ttsEnabled = settings.enableTTS;
+  const speakIcon = ttsEnabled ? '🗣️' : '🔊';
 
   useEffect(() => {
-    // Reset states when the current word changes
     setTranslatedModel(null);
     setTranslationError(null);
     setPlayingAudioUrl(null);
@@ -110,7 +111,7 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
 
   const handleTranslate = async () => {
     if (!settings.nativeLanguage) return;
-    
+
     setIsTranslating(true);
     setTranslationError(null);
     setTranslatedModel(null);
@@ -124,38 +125,31 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
     }
   };
 
-  // 1. High Quality AI Voice (Only for Definition)
-  const speakDefinition = async (text: string) => {
-    if (playingAudioUrl) return; 
-    
-    setPlayingAudioUrl('definitie');
-    try {
-        await playTextAsSpeech(text);
-    } catch (e) {
-        // Silent fallback to robotic if AI fails
-        speakRobotic(text);
-    } finally {
-        setPlayingAudioUrl(null);
+  const speakBrowser = (text: string) => {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'nl-BE';
+        const voices = window.speechSynthesis.getVoices();
+        const dutchVoice = voices.find(v => v.lang.includes('nl-BE')) || voices.find(v => v.lang.includes('nl'));
+        if (dutchVoice) utterance.voice = dutchVoice;
+        window.speechSynthesis.speak(utterance);
     }
   };
 
-  // 2. Standard Browser Voice (For single words, examples, synonyms)
-  // Fast, no latency, handles single words better than AI sometimes
-  const speakRobotic = (text: string) => {
-    if ('speechSynthesis' in window) {
-        // Cancel any ongoing speech to prevent queue buildup
-        window.speechSynthesis.cancel();
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'nl-BE'; 
-        
-        const voices = window.speechSynthesis.getVoices();
-        // Try to find a Belgian or Dutch voice
-        const dutchVoice = voices.find(v => v.lang.includes('nl-BE')) || voices.find(v => v.lang.includes('nl'));
-        if (dutchVoice) {
-            utterance.voice = dutchVoice;
-        }
-        window.speechSynthesis.speak(utterance);
+  const speak = async (cacheKey: string, text: string) => {
+    if (playingAudioUrl) return;
+    if (!ttsEnabled) {
+      speakBrowser(text);
+      return;
+    }
+    setPlayingAudioUrl(cacheKey);
+    try {
+      await playCachedOrGenerateTTS(cacheKey, text);
+    } catch {
+      speakBrowser(text);
+    } finally {
+      setPlayingAudioUrl(null);
     }
   };
 
@@ -173,14 +167,13 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
             <FrayerModelCard title="Definitie">
                 <div className="flex items-start gap-3">
                     <p className="flex-grow">{currentModel.definitie}</p>
-                    <button 
-                        onClick={() => speakDefinition(currentModel.definitie)} 
+                    <button
+                        onClick={() => speak(`${currentWord}:definitie`, currentModel.definitie)}
                         disabled={!!playingAudioUrl}
-                        className="flex-shrink-0 p-2 bg-tal-purple/10 hover:bg-tal-purple/20 text-tal-purple rounded-full transition-colors disabled:opacity-50" 
-                        aria-label="Luister naar natuurlijke uitspraak"
-                        title="Klik voor natuurlijke uitspraak"
+                        className="flex-shrink-0 p-2 bg-tal-purple/10 hover:bg-tal-purple/20 text-tal-purple rounded-full transition-colors disabled:opacity-50"
+                        aria-label="Luister naar uitspraak"
                     >
-                        {playingAudioUrl === 'definitie' ? <Spinner className="w-5 h-5 text-tal-purple" /> : <span role="img" aria-label="Natuurlijke spraak" className="text-lg">🗣️</span>}
+                        {playingAudioUrl === `${currentWord}:definitie` ? <Spinner className="w-5 h-5 text-tal-purple" /> : <span role="img" aria-label="Uitspraak" className="text-lg">{speakIcon}</span>}
                     </button>
                 </div>
                 {translatedModel && <>
@@ -192,11 +185,12 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
                 <FrayerModelCard title="Synoniemen">
                     <div className="flex items-start justify-between">
                         <p className="italic">{currentModel.synoniemen.join(', ')}</p>
-                        <button 
-                            onClick={() => speakRobotic(currentModel.synoniemen.join(', '))}
-                            className="text-slate-400 hover:text-tal-teal p-1 ml-2"
+                        <button
+                            onClick={() => speak(`${currentWord}:synoniemen`, currentModel.synoniemen.join(', '))}
+                            disabled={!!playingAudioUrl}
+                            className="text-slate-400 hover:text-tal-teal p-1 ml-2 disabled:opacity-50"
                         >
-                            🔊
+                            {speakIcon}
                         </button>
                     </div>
                     {translatedModel && <>
@@ -209,12 +203,13 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
 
         {/* Center Column */}
         <div className="order-first lg:order-none bg-surface-alt p-6 rounded-2xl shadow-lg flex flex-col items-center justify-center min-h-[250px] lg:h-full text-center relative">
-            <button 
-                onClick={() => speakRobotic(currentWord)}
-                className="absolute top-4 right-4 p-2 bg-white rounded-full shadow hover:bg-slate-100 text-tal-teal"
+            <button
+                onClick={() => speak(currentWord, currentWord)}
+                disabled={!!playingAudioUrl}
+                className="absolute top-4 right-4 p-2 bg-white rounded-full shadow hover:bg-slate-100 text-tal-teal disabled:opacity-50"
                 aria-label="Spreek woord uit"
             >
-                 🔊
+                {speakIcon}
             </button>
             <h2 className={`font-extrabold text-primary tracking-tight leading-tight ${getWordSizeClass(currentWord)}`}>
                 {currentWord}
@@ -234,12 +229,13 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
                         <div className="flex-grow">
                             <p><HighlightedText text={ex.zin} highlight={ex.gebruiktWoord} /></p>
                         </div>
-                        <button 
-                            onClick={() => speakRobotic(ex.zin)} 
-                            className="text-slate-400 hover:text-tal-teal p-1 flex-shrink-0" 
+                        <button
+                            onClick={() => speak(`${currentWord}:voorbeeld:${i}`, ex.zin)}
+                            disabled={!!playingAudioUrl}
+                            className="text-slate-400 hover:text-tal-teal p-1 flex-shrink-0 disabled:opacity-50"
                             aria-label="Luister"
                         >
-                             🔊
+                            {speakIcon}
                         </button>
                     </div>
                 ))}
@@ -253,12 +249,13 @@ const FrayerModelView: React.FC<FrayerModelViewProps> = ({ models, words, onComp
             {showSynonymsAntonyms && (
                 <FrayerModelCard title="Antoniemen">
                     <div className="flex items-start justify-between">
-                         <p className="italic">{currentModel.antoniemen.join(', ')}</p>
-                         <button 
-                            onClick={() => speakRobotic(currentModel.antoniemen.join(', '))}
-                            className="text-slate-400 hover:text-tal-teal p-1 ml-2"
+                        <p className="italic">{currentModel.antoniemen.join(', ')}</p>
+                        <button
+                            onClick={() => speak(`${currentWord}:antoniemen`, currentModel.antoniemen.join(', '))}
+                            disabled={!!playingAudioUrl}
+                            className="text-slate-400 hover:text-tal-teal p-1 ml-2 disabled:opacity-50"
                         >
-                            🔊
+                            {speakIcon}
                         </button>
                     </div>
                     {translatedModel && <>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SessionSummaryData } from '../types';
+import RewardLauncher from './RewardLauncher';
 
 const ScoreCircle: React.FC<{ score: number, total: number }> = ({ score, total }) => {
     const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
@@ -26,7 +27,7 @@ const ScoreCircle: React.FC<{ score: number, total: number }> = ({ score, total 
 
     return (
         <div className="relative w-52 h-52">
-            <svg className="w-full h-full" viewBox="0 0 200 200">
+            <svg className="w-full h-full" viewBox="0 0 200 200" role="img" aria-label={`Score: ${percentage}%`}>
                 <circle
                     className="text-slate-200"
                     strokeWidth="10"
@@ -58,10 +59,23 @@ const ScoreCircle: React.FC<{ score: number, total: number }> = ({ score, total 
     );
 };
 
-const SessionSummary: React.FC<{ summaryData: SessionSummaryData; onClose: (destination: 'welcome' | 'dashboard') => void; }> = ({ summaryData, onClose }) => {
-    const { quizResults, earnedXP } = summaryData;
+interface SessionSummaryProps {
+    summaryData: SessionSummaryData;
+    onClose: (destination: 'welcome' | 'dashboard') => void;
+    snakeTokens?: number;
+    dragonTokens?: number;
+    onSpendToken?: (mode: 'snake' | 'dragon') => void;
+}
+
+const SessionSummary: React.FC<SessionSummaryProps> = ({ summaryData, onClose, snakeTokens = 0, dragonTokens = 0, onSpendToken }) => {
+    const { quizResults, earnedXP, weakWordsBonus } = summaryData;
     const correctCount = quizResults.filter(r => r.correct).length;
     const totalCount = quizResults.length;
+    const accuracy = totalCount > 0 ? correctCount / totalCount : 0;
+    // Toon de reward-sectie alleen als er minstens één token beschikbaar is.
+    // Tokens worden in usePracticeSession.finishPractice toegekend, dus tegen de tijd dat we hier
+    // renderen zit de net-verdiende token er al in.
+    const showRewardSection = onSpendToken && (snakeTokens > 0 || dragonTokens > 0);
 
     return (
         <div className="relative max-w-4xl mx-auto p-6 sm:p-8 bg-white rounded-2xl shadow-lg animate-fade-in overflow-hidden z-10">
@@ -79,11 +93,50 @@ const SessionSummary: React.FC<{ summaryData: SessionSummaryData; onClose: (dest
 
             {/* Prominent XP Earned Display */}
             {earnedXP && earnedXP > 0 && (
-                <div className="flex justify-center mb-6 relative z-20">
-                    <div className="bg-gradient-to-r from-amber-400 to-orange-500 text-white px-6 py-3 rounded-full shadow-lg animate-bounce-in flex items-center gap-2">
-                        <span className="text-2xl">⭐</span>
+                <div className="flex flex-col items-center gap-2 mb-6 relative z-20">
+                    <div
+                        className="text-white px-6 py-3 rounded-full shadow-lg animate-bounce-in flex items-center gap-2"
+                        // Inline gradient — Tailwind CDN ondersteunt geen gradient utilities
+                        style={{
+                            background: weakWordsBonus
+                                ? 'linear-gradient(90deg, #a855f7 0%, #ec4899 100%)'
+                                : 'linear-gradient(90deg, #fbbf24 0%, #f97316 100%)',
+                        }}
+                    >
+                        <span className="text-2xl">{weakWordsBonus ? '🎯' : '⭐'}</span>
                         <span className="text-xl font-bold">+{earnedXP} XP verdiend!</span>
+                        {weakWordsBonus && (
+                            <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white/25 text-xs font-extrabold tracking-wide">
+                                2× BONUS
+                            </span>
+                        )}
                     </div>
+                    {weakWordsBonus && (
+                        <p className="text-sm font-semibold text-purple-700 animate-fade-in">
+                            🔥 Knap! Zwakke woorden oefenen levert dubbel XP op.
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {/* Reward sectie — Sneek/Droak ontgrendeld bij goede sessie of XP-mijlpaal */}
+            {showRewardSection && (
+                <div className="relative z-20 my-6 p-4 rounded-2xl bg-gradient-to-br from-tal-purple to-tal-teal-dark border border-white/10 shadow-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className="text-2xl">🎁</span>
+                        <div>
+                            <h3 className="text-base font-bold text-white">Beloning vrijgespeeld!</h3>
+                            <p className="text-xs text-white/70">
+                                {accuracy >= 0.8 ? 'Top score — pak je Sneek-token. ' : ''}
+                                {dragonTokens > 0 ? 'Een Droak-mijlpaal staat klaar.' : ''}
+                            </p>
+                        </div>
+                    </div>
+                    <RewardLauncher
+                        snakeTokens={snakeTokens}
+                        dragonTokens={dragonTokens}
+                        onSpend={onSpendToken!}
+                    />
                 </div>
             )}
 

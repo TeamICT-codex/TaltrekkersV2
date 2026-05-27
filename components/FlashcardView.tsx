@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { FrayerModelData, PracticeSettings } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
 import { ArrowRightIcon } from './icons/ArrowRightIcon';
-import { translateFrayerModel, playTextAsSpeech } from '../services/geminiService';
+import { translateFrayerModel, playCachedOrGenerateTTS } from '../services/geminiService';
 import Spinner from './Spinner';
 
 
@@ -26,6 +26,8 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ models, words, onComplete
 
   const currentModel = models[currentIndex];
   const currentWord = words[currentIndex];
+  const ttsEnabled = settings.enableTTS;
+  const speakIcon = ttsEnabled ? '🗣️' : '🔊';
 
   useEffect(() => {
     // When the user reaches the last card, mark that they've seen them all
@@ -84,23 +86,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ models, words, onComplete
     }
   };
 
-  // High Quality AI Speech (For Definitions only)
-  const speakDefinition = async (e: React.MouseEvent, text: string) => {
-    e.stopPropagation();
-    if (playingAudioUrl) return;
-
-    setPlayingAudioUrl('definition');
-    try {
-      await playTextAsSpeech(text);
-    } catch (err) {
-      speakRobotic(e, text); // Fallback
-    } finally {
-      setPlayingAudioUrl(null);
-    }
-  };
-
-  // Standard Robotic Speech (For Words)
-  const speakRobotic = (e: React.MouseEvent, text: string) => {
+  const speakBrowser = (e: React.MouseEvent, text: string) => {
     e.stopPropagation();
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -110,6 +96,23 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ models, words, onComplete
       const dutchVoice = voices.find(v => v.lang.includes('nl-BE')) || voices.find(v => v.lang.includes('nl'));
       if (dutchVoice) utterance.voice = dutchVoice;
       window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const speak = async (e: React.MouseEvent, cacheKey: string, text: string) => {
+    e.stopPropagation();
+    if (playingAudioUrl) return;
+    if (!ttsEnabled) {
+      speakBrowser(e, text);
+      return;
+    }
+    setPlayingAudioUrl(cacheKey);
+    try {
+      await playCachedOrGenerateTTS(cacheKey, text);
+    } catch {
+      speakBrowser(e, text);
+    } finally {
+      setPlayingAudioUrl(null);
     }
   };
 
@@ -138,11 +141,12 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ models, words, onComplete
             {/* Front (Word) - Robotic Voice */}
             <div className="absolute w-full h-full backface-hidden bg-surface rounded-2xl shadow-lg flex flex-col items-center justify-center cursor-pointer border border-themed group">
               <button
-                onClick={(e) => speakRobotic(e, currentWord)}
-                className="absolute top-4 right-4 p-2 bg-slate-100 rounded-full shadow text-tal-teal opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => speak(e, currentWord, currentWord)}
+                disabled={!!playingAudioUrl}
+                className="absolute top-4 right-4 p-2 bg-slate-100 rounded-full shadow text-tal-teal opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
                 aria-label="Spreek woord uit"
               >
-                🔊
+                {speakIcon}
               </button>
               <h3 className="text-5xl font-bold text-primary tracking-tight">{currentWord}</h3>
             </div>
@@ -155,13 +159,12 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ models, words, onComplete
                     <div className="flex items-center gap-2 mb-2">
                       <h4 className="font-semibold text-tal-teal">Definitie</h4>
                       <button
-                        onClick={(e) => speakDefinition(e, currentModel.definitie)}
+                        onClick={(e) => speak(e, `${currentWord}:definitie`, currentModel.definitie)}
                         disabled={!!playingAudioUrl}
                         className="p-1.5 bg-tal-purple/10 hover:bg-tal-purple/20 text-tal-purple rounded-full transition-colors disabled:opacity-50"
-                        aria-label="Luister naar natuurlijke uitspraak"
-                        title="Natuurlijke uitspraak"
+                        aria-label="Luister naar uitspraak"
                       >
-                        {playingAudioUrl === 'definition' ? <Spinner className="w-4 h-4 text-tal-purple" /> : <span role="img" aria-label="Natuurlijke spraak">🗣️</span>}
+                        {playingAudioUrl === `${currentWord}:definitie` ? <Spinner className="w-4 h-4 text-tal-purple" /> : <span role="img" aria-label="Uitspraak">{speakIcon}</span>}
                       </button>
                     </div>
                     <p className="text-lg text-secondary">{currentModel.definitie}</p>

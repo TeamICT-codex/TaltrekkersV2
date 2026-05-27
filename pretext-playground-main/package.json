@@ -1,0 +1,37 @@
+{
+  "name": "pretext-playground",
+  "version": "1.0.0",
+  "description": "Reward overlay library and playground for embeddable gamification moments.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:all": "npm run build && npm run build:lib"
+  },
+  "module": "./dist-lib/reward-sdk.js",
+  "types": "./dist-lib/reward-sdk.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist-lib/reward-sdk.js",
+      "types": "./dist-lib/reward-sdk.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "dist-lib",
+    "reward.html",
+    "rewards.html",
+    "README.md"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@chenglou/pretext": "^0.0.2"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3"
+  }
+}

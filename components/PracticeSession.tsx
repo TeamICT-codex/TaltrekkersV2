@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { FrayerModelData, PracticeSettings, QuizQuestion, QuizResult, StudyItemTiming, QuizItemTiming, SessionTimingData } from '../types';
-import { generateFrayerModel, generateQuizQuestions } from '../services/geminiService';
+import { generateFrayerModel, generateQuizQuestions, preloadTTSBatch } from '../services/geminiService';
 import { categorizeError, AppError } from '../services/errorHandling';
+import { shuffleArray } from '../services/utils';
 import LoadingIndicator from './LoadingIndicator';
 import FrayerModelView from './FrayerModelView';
 import QuizView from './QuizView';
@@ -19,16 +20,6 @@ interface PracticeSessionProps {
 type StudyMode = 'frayer' | 'flashcards';
 type SessionPhase = 'loading' | 'study_mode_selection' | 'studying' | 'quiz';
 
-// Fisher-Yates shuffle algorithm
-function shuffleArray<T>(array: T[]): T[] {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-}
-
 const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFinish }) => {
   const [phase, setPhase] = useState<SessionPhase>('loading');
   const [frayerModels, setFrayerModels] = useState<FrayerModelData[]>([]);
@@ -36,6 +27,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
   const [error, setError] = useState<AppError | null>(null);
   const [studyMode, setStudyMode] = useState<StudyMode>('frayer');
 
+  const [failedWords, setFailedWords] = useState<string[]>([]);
   const [studyPhaseStart, setStudyPhaseStart] = useState<number | null>(null);
   const [quizPhaseStart, setQuizPhaseStart] = useState<number | null>(null);
   const [studyTimings, setStudyTimings] = useState<StudyItemTiming[]>([]);
@@ -58,14 +50,43 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
         });
       });
 
-      const generatedModels = await Promise.all(modelPromises);
+      // Promise.allSettled: één mislukt woord blokkeert de rest niet meer
+      const results = await Promise.allSettled(modelPromises);
+      const failed: string[] = [];
+      const generatedModels: FrayerModelData[] = results.map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
+        // Fallback model voor woorden die niet gegenereerd konden worden
+        failed.push(words[index]);
+        return {
+          definitie: '',
+          voorbeelden: [],
+          synoniemen: [],
+          antoniemen: [],
+        } satisfies FrayerModelData;
+      });
+
+      setFailedWords(failed);
       setFrayerModels(generatedModels);
 
-      const generatedQuestions = await generateQuizQuestions(generatedModels, words, {
+      // Quiz generatie en optionele TTS preloading parallel
+      const quizPromise = generateQuizQuestions(generatedModels, words, {
         aiModel: settings.aiModel,
         context: settings.context,
         difficulty: settings.difficulty
       });
+
+      const ttsPromise = settings.enableTTS
+        ? preloadTTSBatch(
+            generatedModels.flatMap((model, i) => [
+              { key: words[i], text: words[i] },
+              { key: `${words[i]}:definitie`, text: model.definitie },
+            ]).filter(item => item.text) // skip lege definities (failed words)
+          )
+        : Promise.resolve(new Map<string, AudioBuffer>());
+
+      const [generatedQuestions] = await Promise.all([quizPromise, ttsPromise]);
 
       // Randomize quiz questions immediately upon generation
       setQuizQuestions(shuffleArray(generatedQuestions));
@@ -81,7 +102,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
     if (words.length > 0) {
       setupSession();
     }
-  }, [setupSession, words.length]);
+  }, [setupSession]);
 
   useEffect(() => {
     if (phase === 'studying') {
@@ -93,8 +114,9 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
     setStudyTimings(prev => {
       const existingIndex = prev.findIndex(t => t.word === word);
       if (existingIndex > -1) {
+        // Maak een nieuw object — niet inplace muteren — zodat React.memo correct werkt
         const updated = [...prev];
-        updated[existingIndex].seconds += seconds;
+        updated[existingIndex] = { ...updated[existingIndex], seconds: updated[existingIndex].seconds + seconds };
         return updated;
       }
       return [...prev, { word, seconds }];
@@ -138,11 +160,33 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
 
   return (
     <>
-      {/* PDF/File Preview Header */}
-      {settings.customFileName && (
+      {/* Weak-words sessie? Speciale bonus-banner ipv de generieke filename-banner. */}
+      {settings.customFileName === 'weak-words' ? (
+        <div
+          className="max-w-3xl mx-auto mb-4 px-4 py-3 rounded-xl flex items-center justify-center gap-3 text-white font-semibold shadow-md animate-fade-in"
+          // Inline gradient — Tailwind CDN ondersteunt geen gradient utilities
+          style={{ background: 'linear-gradient(90deg, #a855f7 0%, #ec4899 100%)' }}
+        >
+          <span className="text-2xl">🎯</span>
+          <span>Je oefent nu je zwakke woorden — </span>
+          <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-white/25 text-xs font-extrabold tracking-wide">
+            2× XP BONUS
+          </span>
+        </div>
+      ) : settings.customFileName ? (
         <div className="max-w-3xl mx-auto mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium animate-fade-in">
           <span>📄</span>
           <span>Je oefent nu met: <strong>{settings.customFileName}</strong></span>
+        </div>
+      ) : null}
+
+      {phase === 'study_mode_selection' && failedWords.length > 0 && (
+        <div className="max-w-3xl mx-auto mb-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-xl flex items-start gap-3 text-sm animate-fade-in">
+          <span className="text-xl shrink-0">⚠️</span>
+          <div>
+            <strong>Niet alle woorden konden gegenereerd worden:</strong>{' '}
+            {failedWords.join(', ')}. De sessie gaat verder met de overige woorden.
+          </div>
         </div>
       )}
 

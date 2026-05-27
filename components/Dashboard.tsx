@@ -23,48 +23,6 @@ interface FeedbackSectionData {
     content: string;
 }
 
-const PasswordPrompt: React.FC<{
-    onConfirm: (password: string) => void;
-    onCancel: () => void;
-    error: string | null;
-}> = ({ onConfirm, onCancel, error }) => {
-    const [password, setPassword] = React.useState('');
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        onConfirm(password);
-    };
-
-    return (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in" style={{ animationDuration: '150ms' }}>
-            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm text-left">
-                <h3 className="text-lg font-bold text-slate-800 mb-2">Wachtwoord Vereist</h3>
-                <p className="text-sm text-slate-600 mb-4">Deze actie is beveiligd. Voer het wachtwoord in om door te gaan.</p>
-                <form onSubmit={handleSubmit}>
-                    <label htmlFor="teacher-password" className="text-sm font-medium text-slate-700">Wachtwoord</label>
-                    <input
-                        id="teacher-password"
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className={`w-full p-2 border ${error ? 'border-red-500' : 'border-slate-300'} rounded-md focus:ring-2 focus:ring-tal-purple mt-1`}
-                        autoFocus
-                    />
-                    {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
-                    <div className="flex justify-end gap-3 mt-6">
-                        <button type="button" onClick={onCancel} className="px-4 py-2 bg-slate-100 text-slate-800 font-semibold rounded-lg hover:bg-slate-200 transition-colors">
-                            Annuleren
-                        </button>
-                        <button type="submit" className="px-4 py-2 bg-tal-purple text-white font-semibold rounded-lg hover:bg-tal-purple-dark transition-colors">
-                            Bevestigen
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    );
-};
-
 const getSessionTags = (session: SessionRecord): string[] => {
     const tags = [];
     const { settings } = session;
@@ -141,22 +99,47 @@ const parseFeedback = (text: string): FeedbackSectionData[] => {
     return sections;
 };
 
-const formatFeedbackContentToHtml = (text: string) => {
-    if (!text) return { __html: '' };
-    const boldedText = text.trim().replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    const blocks = boldedText.split(/\n\s*\n/);
-
-    const html = blocks.map(block => {
-        const lines = block.split('\n');
-        const isUnordered = lines.every(line => /^\s*[-*]\s/.test(line.trim()));
-        if (isUnordered) {
-            const listItems = lines.map(line => `<li>${line.trim().replace(/^[*-]\s/, '')}</li>`).join('');
-            return `<ul>${listItems}</ul>`;
-        }
-        return `<p>${block.replace(/\n/g, '<br />')}</p>`;
-    }).join('');
-    return { __html: html };
+// Renders text with **bold** segments as React nodes — no innerHTML, so React escapes everything.
+const renderInline = (text: string): React.ReactNode[] => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+        const match = part.match(/^\*\*(.+)\*\*$/);
+        if (match) return <strong key={i} className="text-tal-teal">{match[1]}</strong>;
+        return <React.Fragment key={i}>{part}</React.Fragment>;
+    });
 };
+
+const FeedbackContent: React.FC<{ text: string }> = React.memo(({ text }) => {
+    if (!text) return null;
+    const blocks = text.trim().split(/\n\s*\n/);
+    return (
+        <div className="text-slate-700 space-y-2">
+            {blocks.map((block, idx) => {
+                const lines = block.split('\n').filter(Boolean);
+                const isUnordered = lines.length > 0 && lines.every(line => /^\s*[-*]\s/.test(line));
+                if (isUnordered) {
+                    return (
+                        <ul key={idx} className="list-disc pl-5 space-y-1">
+                            {lines.map((line, j) => (
+                                <li key={j}>{renderInline(line.trim().replace(/^[*-]\s/, ''))}</li>
+                            ))}
+                        </ul>
+                    );
+                }
+                return (
+                    <p key={idx} className="leading-relaxed">
+                        {lines.map((line, j) => (
+                            <React.Fragment key={j}>
+                                {j > 0 && <br />}
+                                {renderInline(line)}
+                            </React.Fragment>
+                        ))}
+                    </p>
+                );
+            })}
+        </div>
+    );
+});
 
 const FeedbackSectionView: React.FC<{ section: FeedbackSectionData }> = React.memo(({ section }) => {
     const getIcon = (title: string) => {
@@ -174,16 +157,13 @@ const FeedbackSectionView: React.FC<{ section: FeedbackSectionData }> = React.me
                 <span className="text-2xl" role="img" aria-label={section.title}>{getIcon(section.title)}</span>
                 <h4 className="font-bold text-lg text-slate-800">{section.title}</h4>
             </div>
-            <div
-                className="prose text-slate-700 max-w-none prose-strong:text-tal-teal prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1"
-                dangerouslySetInnerHTML={formatFeedbackContentToHtml(section.content)}
-            />
+            <FeedbackContent text={section.content} />
         </div>
     );
 });
 
 
-const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, onDelete: () => void, requestPassword: (action: () => void) => void }> = React.memo(({ session, studentName, onDelete, requestPassword }) => {
+const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, onDelete: () => void }> = React.memo(({ session, studentName, onDelete }) => {
     const correctAnswers = session.quizResults.filter(r => r.correct).length;
     const totalQuestions = session.quizResults.length;
     const scorePercentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
@@ -213,7 +193,8 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
 
     const protectedHandleAnalyze = () => {
         if (analysis) return; // Don't re-analyze
-        requestPassword(handleAnalyze);
+        if (!window.confirm('Een AI-analyse maken kost een API-credit. Wil je doorgaan?')) return;
+        handleAnalyze();
     };
 
     return (
@@ -258,17 +239,14 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
                     </span>
                 </div>
                 <div className="flex items-center justify-start md:justify-end gap-2">
-                    {session.timingData && !analysis && (
-                        <button
-                            onClick={protectedHandleAnalyze}
-                            disabled={isAnalyzing}
-                            className="flex items-center gap-2 text-xs font-semibold px-2 py-1 bg-tal-purple/10 text-tal-purple rounded-md hover:bg-tal-purple/20 disabled:opacity-50 disabled:cursor-wait"
-                            aria-label="Analyseer sessie"
-                        >
-                            {isAnalyzing ? <Spinner className="text-tal-purple h-4 w-4" /> : '🔬'}
-                            {isAnalyzing ? 'Analyseren...' : 'Analyseer'}
-                        </button>
-                    )}
+                    {/*
+                      "Analyseer"-knop tijdelijk verborgen — kostte AI-credits
+                      en leerlingen mochten dit nooit kunnen triggeren.
+                      TODO: later terug tonen voor leerkrachten/admin via
+                            useAuth().isTeacher || isAdmin gate. State + handler
+                            (handleAnalyze / analysis / analysisError) blijven
+                            staan zodat herinschakelen een 1-line JSX-paste is.
+                    */}
                     <button onClick={onDelete} className="text-slate-400 hover:text-red-600" aria-label="Verwijder sessie"><TrashIcon className="h-4 w-4" /></button>
                 </div>
             </div>
@@ -287,7 +265,7 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
 });
 
 
-const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: DashboardProps['onDeleteSession'], onViewWords: (name: string, data: UserData) => void, requestPassword: (action: () => void) => void }> = React.memo(({ name, data, onDeleteSession, onViewWords, requestPassword }) => {
+const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: DashboardProps['onDeleteSession'], onViewWords: (name: string, data: UserData) => void }> = React.memo(({ name, data, onDeleteSession, onViewWords }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const avgScore = data.sessionHistory.length > 0
         ? Math.round(data.sessionHistory.reduce((acc, session) => {
@@ -343,8 +321,11 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
                             key={session.date}
                             session={session}
                             studentName={name}
-                            onDelete={() => requestPassword(() => onDeleteSession(name, session.date))}
-                            requestPassword={requestPassword}
+                            onDelete={() => {
+                                if (window.confirm(`Sessie van ${new Date(session.date).toLocaleDateString('nl-BE')} verwijderen?`)) {
+                                    onDeleteSession(name, session.date);
+                                }
+                            }}
                         />
                     ))}
                     {data.sessionHistory.length === 0 && <p className="p-4 text-center text-sm text-slate-500">Deze leerling heeft nog geen sessies voltooid.</p>}
@@ -357,33 +338,6 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
 
 const Dashboard: React.FC<DashboardProps> = ({ allUsersData, onBack, onDeleteSession, onDeleteUserData, onPracticeWeakWords }) => {
     const [viewingUser, setViewingUser] = useState<[string, UserData] | null>(null);
-
-    const [passwordPrompt, setPasswordPrompt] = useState<{
-        isVisible: boolean;
-        pendingAction: (() => void) | null;
-        error: string | null;
-    }>({
-        isVisible: false,
-        pendingAction: null,
-        error: null,
-    });
-
-    const requestPassword = (action: () => void) => {
-        setPasswordPrompt({ isVisible: true, pendingAction: action, error: null });
-    };
-
-    const handlePasswordConfirm = (password: string) => {
-        if (password === 'leerkracht') {
-            passwordPrompt.pendingAction?.();
-            setPasswordPrompt({ isVisible: false, pendingAction: null, error: null });
-        } else {
-            setPasswordPrompt(prev => ({ ...prev, error: 'Onjuist wachtwoord. Probeer opnieuw.' }));
-        }
-    };
-
-    const handlePasswordCancel = () => {
-        setPasswordPrompt({ isVisible: false, pendingAction: null, error: null });
-    };
 
     const users = Object.entries(allUsersData);
 
@@ -412,21 +366,13 @@ const Dashboard: React.FC<DashboardProps> = ({ allUsersData, onBack, onDeleteSes
             </div>
             <div className="space-y-4">
                 {users.length > 0 ? (
-                    users.map(([name, data]) => <StudentRow key={name} name={name} data={data} onDeleteSession={onDeleteSession} onViewWords={handleViewWords} requestPassword={requestPassword} />)
+                    users.map(([name, data]) => <StudentRow key={name} name={name} data={data} onDeleteSession={onDeleteSession} onViewWords={handleViewWords} />)
                 ) : (
                     <div className="text-center bg-white rounded-xl shadow-sm p-12">
                         <p className="text-slate-500">Er zijn nog geen resultaten. Start een nieuwe toets om te beginnen!</p>
                     </div>
                 )}
             </div>
-
-            {passwordPrompt.isVisible && (
-                <PasswordPrompt
-                    onConfirm={handlePasswordConfirm}
-                    onCancel={handlePasswordCancel}
-                    error={passwordPrompt.error}
-                />
-            )}
         </div>
     );
 };

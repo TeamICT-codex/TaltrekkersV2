@@ -1,0 +1,114 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - link "Dragon" [ref=e3] [cursor=pointer]:
+      - /url: /
+    - link "ASCII Animations" [ref=e4] [cursor=pointer]:
+      - /url: /ascii.html
+    - generic [ref=e5]: Pretext Playground
+  - generic [ref=e6]:
+    - generic: click & hold for fire — drag through text — press P for panel
+  - button "⚙" [ref=e8] [cursor=pointer]
+  - generic: 0 fps · 1236 letters · 0 particles
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - heading "Playground Controls" [level=2] [ref=e11]
+      - button "×" [ref=e12] [cursor=pointer]
+    - generic [ref=e13]:
+      - generic [ref=e14]: Presets
+      - generic [ref=e15]:
+        - button "Default" [ref=e16] [cursor=pointer]
+        - button "Gentle" [ref=e17] [cursor=pointer]
+        - button "Chaos" [ref=e18] [cursor=pointer]
+        - button "Zen" [ref=e19] [cursor=pointer]
+        - button "Tiny" [ref=e20] [cursor=pointer]
+        - button "Leviathan" [ref=e21] [cursor=pointer]
+    - generic [ref=e22]:
+      - generic [ref=e23]: Dragon
+      - generic [ref=e24]:
+        - generic [ref=e25]: Segments
+        - slider [ref=e26]: "60"
+        - generic [ref=e27]: "60"
+      - generic [ref=e28]:
+        - generic [ref=e29]: Speed
+        - slider [ref=e30]: "0.18"
+        - generic [ref=e31]: "0.18"
+      - generic [ref=e32]:
+        - generic [ref=e33]: Size
+        - slider [ref=e34]: "1"
+        - generic [ref=e35]: "1"
+      - generic [ref=e36]:
+        - generic [ref=e37]: Wings
+        - generic [ref=e38] [cursor=pointer]:
+          - checkbox [checked]
+      - generic [ref=e41]:
+        - generic [ref=e42]: Spines
+        - generic [ref=e43] [cursor=pointer]:
+          - checkbox [checked]
+    - generic [ref=e46]:
+      - generic [ref=e47]: Physics
+      - generic [ref=e48]:
+        - generic [ref=e49]: Push force
+        - slider [ref=e50]: "6"
+        - generic [ref=e51]: "6"
+      - generic [ref=e52]:
+        - generic [ref=e53]: Spring
+        - slider [ref=e54]: "0.015"
+        - generic [ref=e55]: "0.015"
+      - generic [ref=e56]:
+        - generic [ref=e57]: Damping
+        - slider [ref=e58]: "0.93"
+        - generic [ref=e59]: "0.93"
+      - generic [ref=e60]:
+        - generic [ref=e61]: Gravity
+        - slider [ref=e62]: "0.8"
+        - generic [ref=e63]: "0.8"
+    - generic [ref=e64]:
+      - generic [ref=e65]: Fire
+      - generic [ref=e66]:
+        - generic [ref=e67]: Blast radius
+        - slider [ref=e68]: "120"
+        - generic [ref=e69]: "120"
+      - generic [ref=e70]:
+        - generic [ref=e71]: Blast force
+        - slider [ref=e72]: "25"
+        - generic [ref=e73]: "25"
+      - generic [ref=e74]:
+        - generic [ref=e75]: Screen shake
+        - generic [ref=e76] [cursor=pointer]:
+          - checkbox [checked]
+      - generic [ref=e79]:
+        - generic [ref=e80]: Embers
+        - generic [ref=e81] [cursor=pointer]:
+          - checkbox [checked]
+      - generic [ref=e84]:
+        - generic [ref=e85]: Particles
+        - generic [ref=e86] [cursor=pointer]:
+          - checkbox [checked]
+    - generic [ref=e89]:
+      - generic [ref=e90]: Enemies
+      - generic [ref=e91]:
+        - generic [ref=e92]: Enabled
+        - generic [ref=e93] [cursor=pointer]:
+          - checkbox [checked]
+      - generic [ref=e96]:
+        - generic [ref=e97]: Count
+        - slider [ref=e98]: "8"
+        - generic [ref=e99]: "8"
+      - generic [ref=e100]:
+        - generic [ref=e101]: Speed
+        - slider [ref=e102]: "0.6"
+        - generic [ref=e103]: "0.6"
+    - generic [ref=e104]:
+      - generic [ref=e105]: Atmosphere
+      - generic [ref=e106]:
+        - generic [ref=e107]: Runes
+        - generic [ref=e108] [cursor=pointer]:
+          - checkbox [checked]
+      - generic [ref=e111]:
+        - generic [ref=e112]: Custom cursor
+        - generic [ref=e113] [cursor=pointer]:
+          - checkbox [checked]
+      - generic [ref=e116]:
+        - generic [ref=e117]: Text opacity
+        - slider [ref=e118]: "1"
+        - generic [ref=e119]: "1"

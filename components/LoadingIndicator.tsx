@@ -45,7 +45,7 @@ const LoadingIndicator: React.FC = () => {
 
     return (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity duration-300">
-            <div className="bg-tal-teal p-8 rounded-2xl shadow-2xl w-full max-w-lg mx-4 text-center border border-tal-purple/50 flex flex-col items-center relative overflow-hidden">
+            <div className="bg-tal-teal p-8 rounded-2xl shadow-2xl w-full max-w-lg mx-4 text-center border border-tal-purple/50 flex flex-col items-center relative overflow-hidden" role="status" aria-live="polite">
                 <div className="absolute top-0 left-0 w-full h-1 bg-white/20">
                      <div className="h-full bg-tal-gold animate-progress-indeterminate"></div>
                 </div>

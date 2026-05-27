@@ -1,5 +1,5 @@
 
-// Error handling utilities for TALtrekkers
+// Error handling utilities for TALent voor Taal
 
 export type ErrorCategory =
     | 'network'      // Geen internet

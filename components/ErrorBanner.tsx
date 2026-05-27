@@ -29,7 +29,7 @@ const ErrorBanner: React.FC<ErrorBannerProps> = ({ error, onRetry, onDismiss, on
 
     return (
         <div className="flex items-center justify-center min-h-[300px] p-4">
-            <div className={`w-full max-w-lg p-6 rounded-2xl border-2 shadow-lg ${colorClasses}`}>
+            <div className={`w-full max-w-lg p-6 rounded-2xl border-2 shadow-lg ${colorClasses}`} role="alert">
                 {/* Header met icoon */}
                 <div className="flex items-center gap-3 mb-3">
                     <span className="text-4xl">{icon}</span>

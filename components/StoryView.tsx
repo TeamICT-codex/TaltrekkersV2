@@ -20,38 +20,57 @@ interface FeedbackSectionData {
     content: string;
 }
 
-const formatFeedbackContent = (text: string) => {
-    if (!text) return { __html: '' };
-
-    // Process bolding globally first
-    const boldedText = text.trim().replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
-    // Split text into major blocks based on one or more empty lines
-    const blocks = boldedText.split(/\n\s*\n/);
-
-    const html = blocks.map(block => {
-        const lines = block.split('\n');
-        
-        // Check if the entire block is a list
-        const isUnordered = lines.every(line => /^\s*[-*]\s/.test(line.trim()));
-        const isOrdered = lines.every(line => /^\s*\d+\.\s/.test(line.trim()));
-
-        if (isUnordered) {
-            const listItems = lines.map(line => `<li>${line.trim().replace(/^[*-]\s/, '')}</li>`).join('');
-            return `<ul>${listItems}</ul>`;
-        }
-        
-        if (isOrdered) {
-            const listItems = lines.map(line => `<li>${line.trim().replace(/^\d+\.\s/, '')}</li>`).join('');
-            return `<ol>${listItems}</ol>`;
-        }
-
-        // Otherwise, it's a paragraph block. Re-join lines with <br> for intra-paragraph line breaks.
-        return `<p>${block.replace(/\n/g, '<br />')}</p>`;
-    }).join('');
-
-    return { __html: html };
+// Renders text with **bold** segments as React nodes — escapes everything else.
+const renderInline = (text: string, boldClass = 'text-tal-teal-dark font-bold'): React.ReactNode[] => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+        const match = part.match(/^\*\*(.+)\*\*$/);
+        if (match) return <strong key={i} className={boldClass}>{match[1]}</strong>;
+        return <React.Fragment key={i}>{part}</React.Fragment>;
+    });
 };
+
+const FeedbackContent: React.FC<{ text: string }> = React.memo(({ text }) => {
+    if (!text) return null;
+    const blocks = text.trim().split(/\n\s*\n/);
+    return (
+        <div className="text-slate-700 space-y-2">
+            {blocks.map((block, idx) => {
+                const lines = block.split('\n').filter(Boolean);
+                const isUnordered = lines.length > 0 && lines.every(line => /^\s*[-*]\s/.test(line));
+                const isOrdered = lines.length > 0 && lines.every(line => /^\s*\d+\.\s/.test(line));
+                if (isUnordered) {
+                    return (
+                        <ul key={idx} className="list-disc pl-5 space-y-1">
+                            {lines.map((line, j) => (
+                                <li key={j}>{renderInline(line.trim().replace(/^[*-]\s/, ''))}</li>
+                            ))}
+                        </ul>
+                    );
+                }
+                if (isOrdered) {
+                    return (
+                        <ol key={idx} className="list-decimal pl-5 space-y-1">
+                            {lines.map((line, j) => (
+                                <li key={j}>{renderInline(line.trim().replace(/^\d+\.\s/, ''))}</li>
+                            ))}
+                        </ol>
+                    );
+                }
+                return (
+                    <p key={idx} className="leading-relaxed">
+                        {lines.map((line, j) => (
+                            <React.Fragment key={j}>
+                                {j > 0 && <br />}
+                                {renderInline(line)}
+                            </React.Fragment>
+                        ))}
+                    </p>
+                );
+            })}
+        </div>
+    );
+});
 
 
 const FeedbackSectionView: React.FC<{ section: FeedbackSectionData }> = React.memo(({ section }) => {
@@ -71,10 +90,7 @@ const FeedbackSectionView: React.FC<{ section: FeedbackSectionData }> = React.me
                 {getIcon(title)}
                 <h4 className="font-bold text-lg text-slate-800">{title}</h4>
             </div>
-            <div
-                className="prose text-slate-700 max-w-none prose-strong:text-tal-teal-dark prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1"
-                dangerouslySetInnerHTML={formatFeedbackContent(content)}
-            />
+            <FeedbackContent text={content} />
         </div>
     );
 });
@@ -195,12 +211,10 @@ const StoryParagraph: React.FC<{ text: string; showLabel: boolean }> = React.mem
         content = text.substring(label.length);
     }
 
-    const htmlContent = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-tal-gold font-bold">$1</strong>');
-
     return (
         <p className="text-slate-700">
             {label && showLabel && <strong className="text-tal-purple font-semibold mr-2">{label.trim()}</strong>}
-            <span dangerouslySetInnerHTML={{ __html: htmlContent }} />
+            <span>{renderInline(content, 'text-tal-gold font-bold')}</span>
         </p>
     );
 });

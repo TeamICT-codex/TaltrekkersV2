@@ -4,6 +4,7 @@ import { QuizQuestion, QuizResult, QuestionType, PracticeSettings } from '../typ
 import { CheckIcon } from './icons/CheckIcon';
 import { XIcon } from './icons/XIcon';
 import { generateFeedbackForError } from '../services/geminiService';
+import { shuffleArray } from '../services/utils';
 import Spinner from './Spinner';
 
 interface QuizViewProps {
@@ -66,9 +67,8 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
       .map((_, idx) => idx)
       .filter(idx => idx !== correctIndex);
 
-    // Shuffle and pick 2 to eliminate (or fewer if fewer options exist)
-    const shuffled = incorrectIndices.sort(() => 0.5 - Math.random());
-    const toEliminate = shuffled.slice(0, 2);
+    // Shuffle and pick 2 to eliminate (of minder als er minder zijn)
+    const toEliminate = shuffleArray(incorrectIndices).slice(0, 2);
     setEliminatedOptions(toEliminate);
   };
 
@@ -211,7 +211,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
               </button>
             </div>
           )}
-          <p className="font-bold text-lg text-tal-gold ml-2">Score: {score}</p>
+          <p className="font-bold text-lg text-tal-gold ml-2" aria-live="polite">Score: {score}</p>
         </div>
       </div>
 
@@ -254,6 +254,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
               onChange={(e) => setTextAnswer(e.target.value)}
               disabled={isAnswered}
               placeholder="Typ het woord hier..."
+              aria-label="Typ je antwoord"
               className="w-full p-4 rounded-xl bg-white/10 border border-white/30 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-tal-purple outline-none text-lg"
               onKeyDown={(e) => e.key === 'Enter' && handleTextAnswer()}
             />
@@ -304,7 +305,7 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
               </strong></p>
 
               {/* Context Aware Feedback Area */}
-              <div className="bg-red-900/30 p-4 rounded-lg border border-red-500/30 text-sm text-red-100 max-w-xl mx-auto">
+              <div className="bg-red-900/30 p-4 rounded-lg border border-red-500/30 text-sm text-red-100 max-w-xl mx-auto" aria-live="polite">
                 <p className="font-bold mb-1">💡 Feedback:</p>
                 {isFeedbackLoading ? (
                   <div className="flex justify-center py-2"><Spinner className="h-4 w-4 text-red-200" /></div>
