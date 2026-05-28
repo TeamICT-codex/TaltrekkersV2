@@ -203,6 +203,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             }
         };
 
+        // Email-extractie: Microsoft OAuth zet de echte school-email niet altijd op
+        // `currentUser.email`. Bij Azure-tokens uit Het Leercollectief tenant zit
+        // het soms in `user_metadata.email`, `preferred_username` (UPN-format), of
+        // `upn`. We proberen alle bekende locaties; eerste hit met een geldig email
+        // (bevat '@') wint. Lowercase voor consistente domein-check.
+        const extractUserEmail = (currentUser: User): string => {
+            const meta = (currentUser.user_metadata ?? {}) as Record<string, unknown>;
+            const candidates: Array<unknown> = [
+                currentUser.email,
+                meta.email,
+                meta.preferred_username,
+                meta.upn,
+            ];
+            const found = candidates.find(
+                (c): c is string => typeof c === 'string' && c.includes('@')
+            );
+            return (found ?? '').toLowerCase();
+        };
+
         // Domain enforcement: alleen accounts uit ALLOWED_EMAIL_DOMAINS mogen door.
         // Wordt zowel toegepast op Microsoft OAuth callback als magic-link callback.
         // Bij mismatch: signOut + foutmelding tonen via authError state.
@@ -210,9 +229,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // de tenant toe (Het Leercollectief = meerdere domeinen). Wij beperken hier
         // tot enkel onze schoolgroep (@gotalok.be + @hetleercollectief.be).
         const enforceEmailDomain = async (currentUser: User): Promise<boolean> => {
-            const email = currentUser.email?.toLowerCase() ?? '';
+            const email = extractUserEmail(currentUser);
+            // Diagnose-log — ook zichtbaar in productie zodat we bij login-issues
+            // direct zien wat Supabase als email aanlevert. Zonder dit kwamen we
+            // het Dries-issue (email in metadata i.p.v. currentUser.email) niet
+            // op het spoor. Niet privacy-gevoelig: email staat al in browser memory.
+            console.log('[TalentVoorTaal Auth]', {
+                extractedEmail: email,
+                allowedDomains: ALLOWED_EMAIL_DOMAINS,
+                passes: isEmailDomainAllowed(email),
+                rawUser: {
+                    id: currentUser.id,
+                    email: currentUser.email,
+                    metadata: currentUser.user_metadata,
+                },
+            });
             if (!isEmailDomainAllowed(email)) {
-                console.warn(`Login geweigerd: ${email} valt niet binnen toegestane domeinen (${ALLOWED_EMAIL_DOMAINS.join(', ')})`);
+                console.warn(`Login geweigerd: "${email}" valt niet binnen toegestane domeinen (${ALLOWED_EMAIL_DOMAINS.join(', ')})`);
                 setAuthError(
                     `Alleen schoolaccounts (${formatAllowedDomains()}) zijn toegestaan. ` +
                     `Je bent uitgelogd — log opnieuw in met je Office 365-schoolaccount.`
