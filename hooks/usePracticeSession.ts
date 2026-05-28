@@ -105,13 +105,18 @@ export function usePracticeSession({
 
     const currentUserData = allUsersData[currentUser] || { ...DEFAULT_USER_DATA };
 
+    // _listAllWords is een intern transport-veld (kan honderden woorden zijn).
+    // Niet opslaan in SessionRecord — bloat én lekt naar Supabase. We gebruiken
+    // de waarde lokaal voor WordListProgress.allWords (zie verder in deze functie).
+    const { _listAllWords: listAllWordsForProgress, ...settingsForStorage } = practiceSettings;
+
     // --- Sessie + geleerde woorden ---
     const newSession: UserData['sessionHistory'][0] = {
       date: new Date().toISOString(),
       score: sessionScore,
       words: practiceWords,
       quizResults,
-      settings: practiceSettings,
+      settings: settingsForStorage,
       studyMode,
       timingData,
     };
@@ -152,14 +157,37 @@ export function usePracticeSession({
     const listId = String(practiceSettings.customFileName || practiceSettings.context || 'general');
     const existingListProgress = currentUserData.wordListProgress?.[listId];
 
+    // Bepaal de VOLLEDIGE woordenlijst voor deze lijst.
+    // Precedentie:
+    //   1. _listAllWords uit settings (gevuld bij upload-flows in PracticeSetup
+    //      en CustomWordExtractor) — de meest accurate bron
+    //   2. Bestaande allWords uit eerdere sessies — voorkomt dat een korte
+    //      sessie de eerder vastgelegde volledige lijst overschrijft
+    //   3. practiceWords (fallback voor lijsten zonder voorkennis, bv. eerste
+    //      sessie van een algemene lijst zonder _listAllWords)
+    //
+    // Bij re-upload met gewijzigde inhoud (#60.3 was robuuste listId, voor nu
+    // skippen we dat): we filtersen oude practicedWords zodat enkel woorden
+    // die nog in de NIEUWE allWords zitten behouden blijven. Voorkomt phantom-
+    // progress als de lijst inhoudelijk veranderd is.
+    const finalAllWords = listAllWordsForProgress && listAllWordsForProgress.length > 0
+      ? listAllWordsForProgress
+      : (existingListProgress?.allWords && existingListProgress.allWords.length >= practiceWords.length
+          ? existingListProgress.allWords
+          : practiceWords);
+
+    const finalAllWordsLower = new Set(finalAllWords.map(w => w.toLowerCase()));
+    const oldPracticedFiltered = (existingListProgress?.practicedWords || [])
+      .filter(w => finalAllWordsLower.has(w.toLowerCase()));
+
     const newPracticedWords = new Set<string>([
-      ...(existingListProgress?.practicedWords || []),
+      ...oldPracticedFiltered,
       ...practiceWords.map(w => w.toLowerCase()),
     ]);
 
     const updatedListProgress: WordListProgress = {
       listId,
-      allWords: existingListProgress?.allWords || practiceWords,
+      allWords: finalAllWords,
       practicedWords: Array.from(newPracticedWords),
       lastPracticed: new Date().toISOString(),
     };
@@ -220,6 +248,10 @@ export function usePracticeSession({
       settings: practiceSettings,
       earnedXP, // al inclusief 2x bonus bij weak-words
       weakWordsBonus: isWeakWordsSession,
+      // Onderscheid tussen "net verdiend deze sessie" en "accumulatief beschikbaar"
+      // — kritiek voor SessionSummary om niet onterecht "Beloning vrijgespeeld!"
+      // te tonen bij brakke sessies waar de leerling nog wel oude tokens heeft.
+      earnedSnakeTokens,
     });
 
     // --- Achievement detection ---
@@ -271,6 +303,9 @@ export function usePracticeSession({
           score: sessionScore,
           quizResults,
           durationSeconds: totalDuration,
+          // Totale lijst-grootte: gebruikt door TeacherDashboard voor X/Y stats.
+          // Komt uit _listAllWords (PracticeSetup zet dit bij elke sessie-start).
+          totalWords: listAllWordsForProgress?.length,
         }),
         updateWordProgressInSupabase(user.id, syncListId, practiceWords),
       ]).then(results => {

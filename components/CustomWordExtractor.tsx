@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { extractKeyTerms } from '../services/geminiService';
 import { PracticeSettings, WordListProgress } from '../types';
+import type { Vak } from '../data/curriculumVakken';
 import { categorizeError, AppError, ERROR_ICONS } from '../services/errorHandling';
 import { shuffleArray } from '../services/utils';
+import { selectWordsForSession } from '../services/wordSelection';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import Spinner from './Spinner';
 import { SESSION_LENGTH_OPTIONS, MAX_WORDS_PER_SESSION } from '../constants';
@@ -15,7 +17,35 @@ interface CustomWordExtractorProps {
     studentName: string;
     defaultContext?: string;
     hideContextInput?: boolean;
-    existingProgress?: WordListProgress;  // Eerder geoefende woorden voor deze lijst
+    /**
+     * Lookup-callback om eerdere voortgang voor een opgeladen lijst op te halen.
+     * Wordt aangeroepen MET fileName (post-upload). PracticeSetup gebruikt
+     * intern `wordListProgress[fileName]`. Voor opgeladen lijsten is dit de
+     * enige manier om progress te tonen — `existingProgress` als directe prop
+     * werkte niet omdat de fileName pas NA upload bekend is.
+     */
+    lookupProgress?: (listId: string) => WordListProgress | undefined;
+    /**
+     * Lijst van vakken waaruit de leerling NA upload mag kiezen ("welk vak is
+     * dit?"). PracticeSetup berekent deze op basis van finaliteit/jaargang/
+     * richting en levert hem hier. Bij empty/undefined → geen vak-dropdown
+     * (bv. text-paste flow waar context handmatig wordt ingevuld).
+     *
+     * De gekozen vak.id wordt na keuze gebruikt als Gemini-context voor Frayer/
+     * Quiz — kritiek voor correcte interpretatie van ambigue termen ("virus" =
+     * computer-virus in ICT, niet ziekte).
+     */
+    availableVakken?: Vak[];
+    /**
+     * Callback om woorden op te halen die in eerdere sessies van een specifieke
+     * lijst FOUT beantwoord werden. Wordt gebruikt voor consolidatie aan het eind
+     * van een cyclus. Callback ontvangt de fileName (= listId), en PracticeSetup
+     * gebruikt dat om door SessionRecords te filteren.
+     *
+     * Callback i.p.v. directe prop: de fileName is pas NA upload bekend, dus
+     * PracticeSetup kan de set niet vooraf doorgeven.
+     */
+    getIncorrectWordsForFile?: (fileName: string) => string[];
 }
 
 type Stage = 'input' | 'analyzing' | 'selection';
@@ -30,13 +60,18 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
     studentName,
     defaultContext,
     hideContextInput,
-    existingProgress
+    lookupProgress,
+    availableVakken,
+    getIncorrectWordsForFile,
 }) => {
     const [stage, setStage] = useState<Stage>('input');
     const [inputText, setInputText] = useState('');
     const [extractedTerms, setExtractedTerms] = useState<string[]>([]);
     const [selectedLength, setSelectedLength] = useState(SESSION_LENGTH_OPTIONS[0].words);
     const [error, setError] = useState<AppError | null>(null);
+    // Vak-keuze na upload — bepalend voor Gemini-context bij Frayer/Quiz.
+    // Wordt gereset bij resetState zodat een volgende upload opnieuw vraagt.
+    const [selectedVakId, setSelectedVakId] = useState<string | null>(null);
     const [context, setContext] = useState('');
     const [fileName, setFileName] = useState<string | null>(null);
     const [showAllWords, setShowAllWords] = useState(false);
@@ -61,6 +96,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         setFileName(null);
         setShowAllWords(false);
         setPdfTruncated(false);
+        setSelectedVakId(null);
     };
 
     const extractTextFromPdf = async (file: File): Promise<string> => {
@@ -169,7 +205,17 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         setLastAnalyzedText(textToAnalyze); // Bewaar voor retry
 
         try {
-            const terms = await extractKeyTerms(textToAnalyze, { aiModel });
+            // Geef vakcontext mee aan extractie. Op dit moment is selectedVakId
+            // nog null (vak wordt PAS na extractie gekozen — natuurlijke flow).
+            // Fallback naar defaultContext (uploadContext.name) als hint voor
+            // het traject/niveau — biedt zwakke maar nuttige context aan Gemini.
+            // De échte vak-specifieke interpretatie komt later bij Frayer/Quiz
+            // op basis van selectedVakId.
+            const effectiveContext = (hideContextInput ? defaultContext : context) || undefined;
+            const terms = await extractKeyTerms(textToAnalyze, {
+                aiModel,
+                context: effectiveContext,
+            });
             if (terms.length === 0) {
                 throw new Error("Geen geschikte termen gevonden. Probeer een langere tekst.");
             }
@@ -181,49 +227,61 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         }
     };
 
+    // Resolveer de werkelijke listId — moet OVEREENKOMEN met wat usePracticeSession
+    // gebruikt: `customFileName || context || 'general'`. Voor file-uploads = de
+    // bestandsnaam. Voor text-paste in 'Eigen woorden' tab = de context-string.
+    const effectiveListId = fileName
+        || selectedVakId
+        || (hideContextInput ? defaultContext : context)
+        || null;
+
+    const effectiveProgress = useMemo(() => {
+        if (!effectiveListId || !lookupProgress) return undefined;
+        return lookupProgress(effectiveListId);
+    }, [effectiveListId, lookupProgress]);
+
     const handleStart = () => {
-        const effectiveContext = (hideContextInput ? defaultContext : context) || 'Algemeen';
+        // Vak-keuze (in dropdown na upload) wint van uploadContext-fallback.
+        // Voorbeeld: leerling uploadt ICT-lijst, kiest "ICT" → effectiveContext
+        // = "ICT" → Frayer interpreteert "virus" als computer-virus.
+        const effectiveContext = selectedVakId
+            || (hideContextInput ? defaultContext : context)
+            || 'Algemeen';
 
-        // Bepaal welke woorden al geoefend zijn
-        const practicedSet = new Set(
-            (existingProgress?.practicedWords || []).map(w => w.toLowerCase())
-        );
+        // Sluitende-cyclus selectie: ongeoefend EERST (in PDF-volgorde), bij
+        // cyclus-eind aangevuld met foute woorden uit eerdere sessies en (als
+        // dat ook niet genoeg is) random uit overige geoefende.
+        const incorrectWords = fileName
+            ? (getIncorrectWordsForFile?.(fileName) ?? [])
+            : [];
+        const selection = selectWordsForSession({
+            allWords: extractedTerms,
+            practicedWords: effectiveProgress?.practicedWords,
+            incorrectWords,
+            sessionSize: selectedLength,
+        });
 
-        // Splits woorden in ongeoefend en geoefend
-        const unpracticedWords = extractedTerms.filter(
-            word => !practicedSet.has(word.toLowerCase())
-        );
-        const practicedWords = extractedTerms.filter(
-            word => practicedSet.has(word.toLowerCase())
-        );
+        // Shuffle ENKEL voor presentatie — heeft geen invloed op WELKE woorden
+        // gekozen zijn (helper heeft die al deterministisch bepaald).
+        const presentedWords = shuffleArray(selection.words);
 
-        let selectedWords: string[];
-
-        if (unpracticedWords.length >= selectedLength) {
-            // Genoeg ongeoefende woorden: random selectie daaruit
-            selectedWords = shuffleArray<string>(unpracticedWords).slice(0, selectedLength);
-        } else {
-            // Niet genoeg: pak alle ongeoefende + random uit geoefende
-            const neededFromPracticed = selectedLength - unpracticedWords.length;
-            selectedWords = [
-                ...unpracticedWords,
-                ...shuffleArray(practicedWords).slice(0, neededFromPracticed)
-            ];
-        }
-
-        // Shuffle finale selectie
-        selectedWords = shuffleArray(selectedWords);
-
-        // Geef alle woorden door voor tracking
-        onWordsSelected(selectedWords, effectiveContext, fileName || undefined, extractedTerms);
+        // Geef alle woorden door voor tracking (extractedTerms is de volledige lijst,
+        // presentedWords is de geselecteerde subset voor deze sessie).
+        onWordsSelected(presentedWords, effectiveContext, fileName || undefined, extractedTerms);
     };
 
     // Calculate statistics
     const practicedSet = new Set(
-        (existingProgress?.practicedWords || []).map(w => w.toLowerCase())
+        (effectiveProgress?.practicedWords || []).map(w => w.toLowerCase())
     );
     const unpracticedCount = extractedTerms.filter(w => !practicedSet.has(w.toLowerCase())).length;
     const practicedCount = extractedTerms.length - unpracticedCount;
+    const progressPercent = extractedTerms.length > 0
+        ? Math.round((practicedCount / extractedTerms.length) * 100)
+        : 0;
+    // Cyclus-eind = niet genoeg ongeoefende woorden over voor een volledige sessie
+    const isCycleEnd = extractedTerms.length > 0 && unpracticedCount < selectedLength;
+    const isFullyPracticed = extractedTerms.length > 0 && unpracticedCount === 0;
 
     if (stage === 'analyzing') {
         return (
@@ -238,7 +296,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
     if (stage === 'selection') {
         return (
             <div className="space-y-4 animate-fade-in">
-                {/* Samenvatting */}
+                {/* Samenvatting + voortgang */}
                 <div className="bg-green-500/20 border border-green-500/30 p-4 rounded-xl">
                     <p className="font-bold text-white flex items-center gap-2">
                         <span className="text-xl">✅</span>
@@ -246,12 +304,109 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                         {fileName && <span className="text-slate-300 font-normal text-sm"> in "{fileName}"</span>}
                     </p>
                     {practicedCount > 0 && (
-                        <p className="text-sm text-green-300 mt-1 flex items-center gap-2">
-                            <span>📊</span>
-                            {practicedCount} al geoefend, {unpracticedCount} nieuw
-                        </p>
+                        <>
+                            <div className="mt-3 flex items-center gap-2 text-sm text-green-100">
+                                <span className="font-semibold">{practicedCount}/{extractedTerms.length}</span>
+                                <span>geoefend</span>
+                                <span className="font-semibold ml-auto">{progressPercent}%</span>
+                            </div>
+                            <div className="mt-1 h-2 bg-black/30 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full transition-all duration-500"
+                                    style={{
+                                        width: `${progressPercent}%`,
+                                        background: 'linear-gradient(90deg, #34d399 0%, #10b981 100%)',
+                                    }}
+                                />
+                            </div>
+                            <p className="text-xs text-green-200/80 mt-2">
+                                {unpracticedCount > 0
+                                    ? `Nog ${unpracticedCount} nieuw${unpracticedCount === 1 ? '' : 'e'} woord${unpracticedCount === 1 ? '' : 'en'} te ontdekken`
+                                    : '🎉 Je hebt elk woord uit deze lijst minstens 1× geoefend!'
+                                }
+                            </p>
+                        </>
                     )}
                 </div>
+
+                {/* Cyclus-eind banner: bij volgende sessie minder dan N nieuwe woorden,
+                    dus aanvulling met foute woorden uit eerdere sessies. */}
+                {isCycleEnd && (
+                    <div
+                        className="p-3 rounded-xl border"
+                        style={{
+                            background: isFullyPracticed
+                                ? 'linear-gradient(135deg, rgba(168,85,247,0.20) 0%, rgba(236,72,153,0.18) 100%)'
+                                : 'rgba(251,191,36,0.15)',
+                            borderColor: isFullyPracticed ? 'rgba(216,180,254,0.40)' : 'rgba(251,191,36,0.40)',
+                        }}
+                    >
+                        <p className="text-sm text-white flex items-start gap-2 leading-snug">
+                            <span className="text-base">{isFullyPracticed ? '🎯' : '🔄'}</span>
+                            <span>
+                                {isFullyPracticed ? (
+                                    <>
+                                        <strong>Consolidatie-sessie:</strong> je hebt deze lijst helemaal doorlopen.
+                                        Deze sessie focust op woorden die je in eerdere rondes nog fout had.
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>Bijna rond!</strong> Nog {unpracticedCount} nieuwe woord{unpracticedCount === 1 ? '' : 'en'}.
+                                        Deze sessie wordt aangevuld met woorden uit eerdere rondes die je fout had — extra oefening op je zwakke punten.
+                                    </>
+                                )}
+                            </span>
+                        </p>
+                    </div>
+                )}
+
+                {/* Vak-keuze NA upload — natuurlijke flow: leerling ziet zijn woorden,
+                    daarna vraagt de app "welk vak is dit?" om Gemini de juiste context
+                    te geven voor Frayer/Quiz. Kritiek voor ambigue termen (ICT-virus
+                    vs. ziekte). Verschijnt alleen als er vakken aangeleverd zijn. */}
+                {availableVakken && availableVakken.length > 0 && (
+                    <div
+                        className="p-3 rounded-xl border"
+                        style={{
+                            background: selectedVakId
+                                ? 'rgba(16,185,129,0.15)'
+                                : 'rgba(251,191,36,0.15)',
+                            borderColor: selectedVakId
+                                ? 'rgba(110,231,183,0.40)'
+                                : 'rgba(251,191,36,0.45)',
+                        }}
+                    >
+                        <label htmlFor="post-upload-vak" className="block text-sm font-semibold text-white mb-2">
+                            📚 Welk vak hoort deze lijst bij?
+                            <span className="text-amber-200 text-xs font-normal ml-2">
+                                (verbetert de AI-uitleg sterk)
+                            </span>
+                        </label>
+                        <select
+                            id="post-upload-vak"
+                            value={selectedVakId ?? ''}
+                            onChange={(e) => setSelectedVakId(e.target.value || null)}
+                            className="w-full p-2.5 rounded-lg bg-black/30 border border-white/20 text-white text-sm focus:ring-2 focus:ring-amber-300 outline-none cursor-pointer"
+                        >
+                            <option value="">— Kies een vak (aanbevolen) —</option>
+                            {availableVakken.map(vak => (
+                                <option key={vak.id} value={vak.id} className="bg-tal-teal-dark text-white">
+                                    {vak.label}
+                                </option>
+                            ))}
+                        </select>
+                        {!selectedVakId ? (
+                            <p className="text-xs text-amber-200/90 mt-2 leading-snug">
+                                💡 Tip: ICT-woorden zoals <strong>"virus"</strong> of <strong>"cookie"</strong> krijgen
+                                dan de IT-betekenis i.p.v. de alledaagse uitleg.
+                            </p>
+                        ) : (
+                            <p className="text-xs text-emerald-200 mt-2 leading-snug">
+                                ✓ AI weet nu dat dit een {availableVakken.find(v => v.id === selectedVakId)?.label}-lijst is.
+                            </p>
+                        )}
+                    </div>
+                )}
 
                 {/* PDF truncatie waarschuwing */}
                 {pdfTruncated && (

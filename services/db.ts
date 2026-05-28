@@ -12,6 +12,8 @@ interface SaveSessionParams {
     score: number;
     quizResults: QuizResult[];
     durationSeconds: number;
+    /** Totaal aantal woorden in de VOLLEDIGE opgeladen lijst (uit _listAllWords). Optioneel — voor TeacherDashboard X/Y stats. */
+    totalWords?: number;
 }
 
 export const saveSessionToSupabase = async ({
@@ -24,6 +26,7 @@ export const saveSessionToSupabase = async ({
     score,
     quizResults,
     durationSeconds,
+    totalWords,
 }: SaveSessionParams) => {
     if (!userId) return;
 
@@ -38,6 +41,14 @@ export const saveSessionToSupabase = async ({
             score: score,
             total_questions: quizResults.length,
             duration_seconds: Math.floor(durationSeconds),
+            // Per-woord resultaten — gebruikt door TeacherDashboard voor de
+            // drill-down (welke woorden goed/fout per sessie). Pre-2026-05-28
+            // sessies hebben dit veld leeg → drill-down toont fallback.
+            quiz_results: quizResults,
+            // Totale grootte van de opgeladen lijst — voor "X/Y geoefend" stats
+            // in TeacherDashboard. Optioneel: voor sessies zonder _listAllWords
+            // (oude sessies of algemene niveau-modi) blijft dit NULL.
+            total_words: totalWords ?? null,
         });
 
         if (error) {
@@ -331,3 +342,34 @@ export const getFeedback = async (): Promise<{
         return { data: null, error: 'Er ging iets mis.' };
     }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESET MY DATA — herhaalbare-test helper (dev/admin gebruik)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Wist sessiehistorie, woord-voortgang, feedback EN reset profile-stats voor de
+ * huidige ingelogde user. Behoudt identiteit + voorkeuren (klas, finaliteit,
+ * native_language, avatar_id).
+ *
+ * Implementatie: roept de Postgres RPC `reset_my_data()` aan (zie migration
+ * 2026-05-28). De RPC draait met SECURITY DEFINER omdat normale users geen
+ * DELETE-policies hebben op practice_sessions / word_progress / feedback.
+ *
+ * Caller-verantwoordelijkheid: localStorage `taltrekkers_*` keys wissen +
+ * pagina re-laden, zodat in-memory state (useUserData hook) opnieuw vanuit
+ * de schone DB-state hydrateert.
+ */
+export async function resetCurrentUserData(): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { error } = await supabase.rpc('reset_my_data');
+        if (error) {
+            console.error('reset_my_data RPC error:', error);
+            return { success: false, error: error.message };
+        }
+        return { success: true };
+    } catch (err) {
+        console.error('Unexpected error in resetCurrentUserData:', err);
+        return { success: false, error: 'Er ging iets mis bij het resetten.' };
+    }
+}

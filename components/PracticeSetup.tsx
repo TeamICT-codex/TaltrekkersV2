@@ -2,8 +2,10 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { WordLevel, PracticeSettings, UserData, Finaliteit, Jaargang } from '../types';
 import { WORD_LISTS_METADATA, loadWordList, LEVEL_DIFFICULTY_MAP, SESSION_LENGTH_OPTIONS, ONEDRIVE_URLS } from '../constants';
 import { shuffleArray } from '../services/utils';
+import { selectWordsForSession, getIncorrectWordsForList, prepareResumeList } from '../services/wordSelection';
 import { useAuth } from '../contexts/AuthContext';
 import CustomWordExtractor from './CustomWordExtractor';
+import { getVakkenForUpload } from '../data/curriculumVakken';
 
 interface CourseOption {
     id: string;
@@ -80,7 +82,7 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
     // Zo hoeft de leerling deze niet bij elke vakspecifieke sessie opnieuw te kiezen.
     const { finaliteit: profileFinaliteit, jaargang: profileJaargang } = useAuth();
 
-    const [practiceMode, setPracticeMode] = useState<'general' | 'subjectSpecific' | 'custom'>('general');
+    const [practiceMode, setPracticeMode] = useState<'general' | 'subjectSpecific' | 'custom' | 'myLists'>('general');
     const [wordsPerSession, setWordsPerSession] = useState(20);
     const [enableTTS, setEnableTTS] = useState(false);
 
@@ -174,6 +176,19 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
         return null;
     }, [selectedFinaliteit, selectedJaargang, selectedVakType, selectedCourse]);
 
+    // Beschikbare vakken voor de huidige (finaliteit + jaargang + richting)-combo.
+    // OKAN: per fase een eigen lijst thema's (incl. ICT, Schooltaalwoorden, ...).
+    // AF/DF basisvorming: alle algemene vakken (Nederlands, Wiskunde, ...).
+    // AF/DF specifiek: vakken voor de gekozen richting (bv. APPDA → SQL, Hardware, ...).
+    const availableVakken = useMemo(() => {
+        return getVakkenForUpload({
+            finaliteit: selectedFinaliteit ?? undefined,
+            jaargang: selectedJaargang ?? undefined,
+            richting: selectedCourse?.name,
+            vakType: selectedVakType,
+        });
+    }, [selectedFinaliteit, selectedJaargang, selectedVakType, selectedCourse]);
+
     const getExistingProgress = (contextId: string) => {
         return currentUserData?.wordListProgress?.[contextId];
     };
@@ -215,19 +230,20 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
         // Dynamisch inladen van de gekozen lijst
         const allWords = await loadWordList(selectedGeneralMode);
         const existingProgress = getExistingProgress(selectedGeneralMode);
-        const practicedWords = new Set(existingProgress?.practicedWords?.map(w => w.toLowerCase()) || []);
-        
-        const unpracticedWords = allWords.filter(w => !practicedWords.has(w.toLowerCase()));
-        const previouslyPracticedWords = allWords.filter(w => practicedWords.has(w.toLowerCase()));
+        // Foute woorden uit eerdere sessies van DEZELFDE algemene lijst — voor consolidatie
+        const incorrectWords = getIncorrectWordsForList(currentUserData?.sessionHistory, selectedGeneralMode);
 
-        let selectedWords: string[] = shuffleArray(unpracticedWords).slice(0, wordsPerSession);
+        // Sluitende-cyclus selectie: ongeoefend EERST in PDF-volgorde, bij
+        // cyclus-eind aangevuld met incorrect-woorden + random aanvulling.
+        const selection = selectWordsForSession({
+            allWords,
+            practicedWords: existingProgress?.practicedWords,
+            incorrectWords,
+            sessionSize: wordsPerSession,
+        });
 
-        if (selectedWords.length < wordsPerSession) {
-            const needed = wordsPerSession - selectedWords.length;
-            selectedWords = [...selectedWords, ...shuffleArray(previouslyPracticedWords).slice(0, needed)];
-        }
-
-        selectedWords = shuffleArray(selectedWords);
+        // Shuffle ENKEL voor presentatie — selectie is al deterministisch.
+        const selectedWords = shuffleArray(selection.words);
 
         let settings: PracticeSettings = {
             showSynonymsAntonyms: true,
@@ -237,12 +253,15 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
             context: selectedGeneralMode,
             difficulty: LEVEL_DIFFICULTY_MAP[selectedGeneralMode],
             enableTTS,
+            // VOLLEDIGE algemene lijst voor accurate WordListProgress.
+            // Zonder dit zou allWords beperkt zijn tot de N woorden uit deze sessie.
+            _listAllWords: allWords,
         };
 
         onStartPractice(studentName, selectedWords, settings);
     };
 
-    const handleStartCustom = (words: string[], context: string, fileName?: string) => {
+    const handleStartCustom = (words: string[], context: string, fileName?: string, allWords?: string[]) => {
         if (!studentName.trim()) {
             alert("Vul alsjeblieft een naam in.");
             return;
@@ -252,10 +271,10 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
             return;
         }
 
-        let activeContext = context;
-        if (practiceMode === 'subjectSpecific' && uploadContext) {
-            activeContext = uploadContext.name;
-        }
+        // CustomWordExtractor levert al de juiste context: selectedVakId (na
+        // post-upload vak-keuze) → defaultContext (uploadContext.name) → 'Algemeen'.
+        // Hier hoeven we niets meer te overschrijven.
+        const activeContext = context;
 
         const settings: PracticeSettings = {
             showSynonymsAntonyms: true,
@@ -266,6 +285,9 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
             difficulty: WordLevel.Intermediate,
             customFileName: fileName,
             enableTTS,
+            // De VOLLEDIGE woordenlijst — kritiek voor accurate WordListProgress.
+            // Anders denkt de app dat allWords = de 20 woorden uit deze sessie.
+            _listAllWords: allWords,
         };
 
         if (practiceMode === 'subjectSpecific' && selectedFinaliteit && selectedJaargang && uploadContext) {
@@ -278,6 +300,80 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
         onStartPractice(studentName, words, settings);
     };
 
+    /**
+     * Hervat een eerder opgeladen lijst zonder re-upload — kernfeature van #59.
+     *
+     * Gebruikt de opgeslagen `wordListProgress.allWords` (van de oorspronkelijke
+     * upload) en `practicedWords` om via de selectie-helper de volgende sessie
+     * te bouwen. De PracticeSettings worden overgenomen van de meest recente
+     * sessie van deze lijst — zo behoudt de leerling zijn vak-keuze, AI-model,
+     * etc. zonder opnieuw te moeten kiezen.
+     */
+    const handleResumeList = (listId: string) => {
+        if (!studentName.trim()) {
+            alert("Vul alsjeblieft een naam in.");
+            return;
+        }
+        const progress = currentUserData?.wordListProgress?.[listId];
+        const resumed = prepareResumeList({
+            listId,
+            progress,
+            sessions: currentUserData?.sessionHistory,
+        });
+        if (!resumed) {
+            alert("Deze lijst heeft geen opgeslagen woorden. Upload de lijst opnieuw.");
+            return;
+        }
+
+        // Bouw settings: hergebruik vorige sessie's settings (vak-context, finaliteit
+        // etc.), of fallback naar minimale defaults. Huidige UI-keuzes (aiModel,
+        // nativeLanguage, enableTTS) winnen — die kunnen tussentijds veranderd zijn.
+        // _listAllWords expliciet uit progress, NIET via lastSettings spread —
+        // legacy sessies (pre-#59) hebben dit veld niet, en dan zou allWords
+        // krimpen tot de N woorden van deze sessie.
+        const lastSettings = resumed.lastSettings;
+        const settings: PracticeSettings = lastSettings ? {
+            ...lastSettings,
+            wordsPerSession: resumed.words.length,
+            aiModel,
+            nativeLanguage: nativeLanguage.trim(),
+            enableTTS,
+            _listAllWords: progress?.allWords,
+        } : {
+            showSynonymsAntonyms: true,
+            wordsPerSession: resumed.words.length,
+            aiModel,
+            nativeLanguage: nativeLanguage.trim(),
+            context: listId,
+            difficulty: WordLevel.Intermediate,
+            customFileName: listId,
+            enableTTS,
+            _listAllWords: progress?.allWords,
+        };
+
+        onStartPractice(studentName, resumed.words, settings);
+    };
+
+    /** Alle wordListProgress entries gesorteerd op laatst-geoefend (meest recent eerst).
+     *
+     *  Filtert:
+     *   - lege/legacy entries (allWords leeg)
+     *   - 'weak-words' marker (interne flag voor zwakke-woorden sessies, niet voor UI)
+     *   - algemene WordLevel listIds (die hebben hun eigen progress-tegel in de "Algemeen" tab)
+     *
+     *  Resultaat: enkel échte opgeladen woordenlijsten (file uploads + custom text-pastes). */
+    const myListsEntries = useMemo(() => {
+        const wordLevelIds = new Set(Object.values(WordLevel) as string[]);
+        const entries = Object.entries(currentUserData?.wordListProgress ?? {})
+            .filter(([listId, p]) =>
+                p.allWords.length > 0
+                && listId !== 'weak-words'
+                && !wordLevelIds.has(listId)
+            );
+        entries.sort((a, b) => (b[1].lastPracticed || '').localeCompare(a[1].lastPracticed || ''));
+        return entries;
+    }, [currentUserData?.wordListProgress]);
+
     const isStartDisabled = !studentName.trim() ||
         (practiceMode === 'general' && !selectedGeneralMode);
 
@@ -285,10 +381,19 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
         <div className="bg-white/10 p-4 rounded-2xl border border-white/20 space-y-4">
             <div>
                 <p className="text-sm font-semibold text-white mb-2">1. Kies je woordenlijst:</p>
-                <div className="bg-black/20 p-1 rounded-xl grid grid-cols-3 gap-1">
-                    <button onClick={() => setPracticeMode('general')} className={`px-2 py-1.5 rounded-lg font-semibold text-sm transition-colors ${practiceMode === 'general' ? 'bg-white text-tal-teal shadow-md' : 'text-slate-200 hover:bg-white/10'}`}>Algemeen</button>
-                    <button onClick={() => setPracticeMode('subjectSpecific')} className={`px-2 py-1.5 rounded-lg font-semibold text-sm transition-colors ${practiceMode === 'subjectSpecific' ? 'bg-white text-tal-teal shadow-md' : 'text-slate-200 hover:bg-white/10'}`}>Vakspecifiek</button>
-                    <button onClick={() => setPracticeMode('custom')} className={`px-2 py-1.5 rounded-lg font-semibold text-sm transition-colors ${practiceMode === 'custom' ? 'bg-white text-tal-teal shadow-md' : 'text-slate-200 hover:bg-white/10'}`}>Eigen woorden</button>
+                <div className={`bg-black/20 p-1 rounded-xl grid gap-1 ${myListsEntries.length > 0 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                    <button onClick={() => setPracticeMode('general')} className={`px-2 py-1.5 rounded-lg font-semibold text-xs sm:text-sm transition-colors ${practiceMode === 'general' ? 'bg-white text-tal-teal shadow-md' : 'text-slate-200 hover:bg-white/10'}`}>Algemeen</button>
+                    <button onClick={() => setPracticeMode('subjectSpecific')} className={`px-2 py-1.5 rounded-lg font-semibold text-xs sm:text-sm transition-colors ${practiceMode === 'subjectSpecific' ? 'bg-white text-tal-teal shadow-md' : 'text-slate-200 hover:bg-white/10'}`}>Vakspecifiek</button>
+                    <button onClick={() => setPracticeMode('custom')} className={`px-2 py-1.5 rounded-lg font-semibold text-xs sm:text-sm transition-colors ${practiceMode === 'custom' ? 'bg-white text-tal-teal shadow-md' : 'text-slate-200 hover:bg-white/10'}`}>Eigen woorden</button>
+                    {myListsEntries.length > 0 && (
+                        <button
+                            onClick={() => setPracticeMode('myLists')}
+                            className={`px-2 py-1.5 rounded-lg font-semibold text-xs sm:text-sm transition-colors flex items-center justify-center gap-1 ${practiceMode === 'myLists' ? 'bg-white text-tal-teal shadow-md' : 'text-slate-200 hover:bg-white/10'}`}
+                        >
+                            <span>📚 Mijn lijsten</span>
+                            <span className="bg-tal-purple/80 text-white text-[10px] px-1.5 py-0.5 rounded-full">{myListsEntries.length}</span>
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -514,7 +619,11 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
                                         studentName={studentName}
                                         defaultContext={uploadContext.name}
                                         hideContextInput={true}
-                                        existingProgress={getExistingProgress(uploadContext.name)}
+                                        lookupProgress={(listId) => currentUserData?.wordListProgress?.[listId]}
+                                        availableVakken={availableVakken}
+                                        getIncorrectWordsForFile={(fname) =>
+                                            getIncorrectWordsForList(currentUserData?.sessionHistory, fname)
+                                        }
                                     />
                                 </div>
                             )
@@ -528,8 +637,77 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
                             onWordsSelected={handleStartCustom}
                             aiModel={aiModel}
                             studentName={studentName}
-                            existingProgress={getExistingProgress('custom')}
+                            lookupProgress={(listId) => currentUserData?.wordListProgress?.[listId]}
+                            availableVakken={availableVakken}
+                            getIncorrectWordsForFile={(fname) =>
+                                getIncorrectWordsForList(currentUserData?.sessionHistory, fname)
+                            }
                         />
+                    </div>
+                )}
+                {practiceMode === 'myLists' && (
+                    <div className="animate-fade-in space-y-3">
+                        <div className="flex items-center justify-between mb-1">
+                            <p className="font-semibold text-white">📚 Hervat een eerder opgeladen lijst</p>
+                            <span className="text-xs text-slate-300">{myListsEntries.length} {myListsEntries.length === 1 ? 'lijst' : 'lijsten'}</span>
+                        </div>
+                        <p className="text-xs text-slate-300 mb-3 leading-snug">
+                            Klik op een lijst om door te gaan waar je gebleven was — geen nieuwe upload nodig.
+                        </p>
+                        <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                            {myListsEntries.map(([listId, progress]) => {
+                                const total = progress.allWords.length;
+                                const practiced = progress.practicedWords.length;
+                                const percent = total > 0 ? Math.round((practiced / total) * 100) : 0;
+                                const isFullyPracticed = practiced >= total;
+                                const sessionsForList = (currentUserData?.sessionHistory ?? []).filter(
+                                    s => (s.settings.customFileName || s.settings.context) === listId
+                                );
+                                const latestSession = sessionsForList.sort((a, b) => b.date.localeCompare(a.date))[0];
+                                const displayName = latestSession?.settings.customFileName || listId;
+                                const lastDate = progress.lastPracticed
+                                    ? new Date(progress.lastPracticed).toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' })
+                                    : null;
+                                return (
+                                    <button
+                                        key={listId}
+                                        onClick={() => handleResumeList(listId)}
+                                        disabled={!studentName.trim()}
+                                        className="w-full text-left bg-black/25 hover:bg-black/40 disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 hover:border-white/30 p-3 rounded-lg transition-all"
+                                    >
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                            <span className="text-sm font-semibold text-white truncate" title={displayName}>
+                                                {isFullyPracticed && '🎯 '}
+                                                {displayName}
+                                            </span>
+                                            <span className="text-xs text-slate-300 shrink-0 font-mono">
+                                                {practiced}/{total}
+                                            </span>
+                                        </div>
+                                        <div className="h-2 bg-black/30 rounded-full overflow-hidden mb-2">
+                                            <div
+                                                className="h-full transition-all duration-500"
+                                                style={{
+                                                    width: `${percent}%`,
+                                                    background: isFullyPracticed
+                                                        ? 'linear-gradient(90deg, #a855f7 0%, #ec4899 100%)'
+                                                        : 'linear-gradient(90deg, #34d399 0%, #10b981 100%)',
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="flex items-center justify-between text-xs text-slate-300">
+                                            <span>
+                                                {isFullyPracticed
+                                                    ? '✨ Volledig doorlopen — consolidatie'
+                                                    : `▶ ${percent}% klaar · ${total - practiced} nieuw te gaan`
+                                                }
+                                            </span>
+                                            {lastDate && <span className="text-slate-400">{lastDate}</span>}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
             </div>

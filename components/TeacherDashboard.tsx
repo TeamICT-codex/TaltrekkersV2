@@ -12,6 +12,11 @@ interface RegisteredStudent {
     created_at: string;
 }
 
+interface SessionQuizResult {
+    word: string;
+    correct: boolean;
+}
+
 interface SessionWithProfile {
     id: string;
     score: number;
@@ -23,11 +28,27 @@ interface SessionWithProfile {
     course_id: string | null;
     finaliteit: string | null;
     jaargang: string | null;
+    /** Per-woord resultaten — beschikbaar voor sessies vanaf 2026-05-28. Pre-migration sessies: leeg array. */
+    quiz_results: SessionQuizResult[] | null;
+    /** Totale grootte van de opgeladen lijst — voor X/Y progress stats. NULL voor pre-migration. */
+    total_words: number | null;
     profiles: {
         full_name: string | null;
         email: string;
         klas: string | null;
     };
+}
+
+/** Geaggregeerde voortgang van één leerling op één opgeladen lijst, over alle sessies. */
+interface StudentListProgress {
+    /** UI-label voor de lijst: file_name als beschikbaar, anders context. */
+    label: string;
+    /** Aantal unieke woorden geoefend over alle sessies van deze lijst. */
+    practicedCount: number;
+    /** Totaal woorden in de lijst (MAX van total_words over sessies). NULL als geen sessie het rapporteert. */
+    totalCount: number | null;
+    /** Percentage geoefend, of null als totaal onbekend. */
+    progressPercent: number | null;
 }
 
 interface StudentSummary {
@@ -58,6 +79,8 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     const [categoryFilter, setCategoryFilter] = useState<string>('all');
     const [viewMode, setViewMode] = useState<ViewMode>('sessions');
     const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+    /** Welke sessie-rij in de Sessies-tab is uitgeklapt voor de quiz-resultaten? */
+    const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
     const [finaliteitFilter, setFinaliteitFilter] = useState<string>('all');
     const [jaargangFilter, setJaargangFilter] = useState<string>('all');
     const [klasFilter, setKlasFilter] = useState<string>('all');
@@ -86,6 +109,8 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         course_id,
                         finaliteit,
                         jaargang,
+                        quiz_results,
+                        total_words,
                         profiles (
                             email,
                             full_name,
@@ -287,6 +312,47 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         return `${minutes}m ${secs}s`;
     };
 
+    /**
+     * Aggregeer per leerling de voortgang per opgeladen woordenlijst.
+     * Gebruikt:
+     *   - quiz_results uit alle sessies → unieke geoefende woorden per lijst
+     *   - total_words (MAX over sessies) → grootte van de lijst
+     * Beide velden zijn JSONB/INT-kolommen op practice_sessions (sinds 28 mei 2026).
+     * Voor sessies van vóór die datum zijn ze leeg/NULL → fallback "X / ?".
+     */
+    const getStudentListProgress = (sessions: SessionWithProfile[]): StudentListProgress[] => {
+        // Group per listId (file_name of context). file_name heeft voorrang voor
+        // opgeladen lijsten — context is fallback voor algemene niveau-modi.
+        const listMap = new Map<string, { label: string; words: Set<string>; total: number }>();
+
+        sessions.forEach(s => {
+            const listId = s.file_name || s.context;
+            if (!listId) return;
+            const label = s.file_name || s.context;
+            const entry = listMap.get(listId) ?? { label, words: new Set<string>(), total: 0 };
+            // Verzamel unieke woorden uit alle quiz_results van deze lijst
+            (s.quiz_results ?? []).forEach(r => entry.words.add(r.word.toLowerCase()));
+            // Houd het hoogste rapporteerde totaal aan
+            if (s.total_words && s.total_words > entry.total) entry.total = s.total_words;
+            listMap.set(listId, entry);
+        });
+
+        return Array.from(listMap.values())
+            .map(({ label, words, total }) => {
+                const practicedCount = words.size;
+                const totalCount = total > 0 ? total : null;
+                const progressPercent = totalCount ? Math.round((practicedCount / totalCount) * 100) : null;
+                return { label, practicedCount, totalCount, progressPercent };
+            })
+            // Sorteer: lijsten met meeste voortgang eerst, daarna onbekend totaal achteraan
+            .sort((a, b) => {
+                if (a.progressPercent === null && b.progressPercent === null) return b.practicedCount - a.practicedCount;
+                if (a.progressPercent === null) return 1;
+                if (b.progressPercent === null) return -1;
+                return b.progressPercent - a.progressPercent;
+            });
+    };
+
     const exportToCSV = () => {
         const headers = ['Datum', 'Leerling', 'Email', 'Oefening', 'Score', 'Totaal', 'Percentage', 'Duur (sec)'];
         const rows = filteredSessions.map(s => [
@@ -476,6 +542,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         <table className="w-full text-left">
                             <thead className="bg-slate-50 text-slate-500 font-semibold text-sm uppercase tracking-wider border-b border-slate-200">
                                 <tr>
+                                    <th className="px-6 py-4 w-8"></th>
                                     <th className="px-6 py-4">Datum</th>
                                     <th className="px-6 py-4">Leerling</th>
                                     <th className="px-6 py-4">Oefening</th>
@@ -484,44 +551,111 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {filteredSessions.map((session) => (
-                                    <tr key={session.id} className="hover:bg-slate-50/50 transition">
-                                        <td className="px-6 py-4 whitespace-nowrap text-slate-600">
-                                            {format(new Date(session.completed_at), "d MMM yyyy HH:mm", { locale: nl })}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="font-medium text-slate-800">
-                                                {session.profiles.full_name || session.profiles.email.split('@')[0]}
-                                            </div>
-                                            <div className="text-xs text-slate-400">
-                                                {session.profiles.email}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-tal-teal/10 text-tal-teal-dark border border-tal-teal/20">
-                                                {session.file_name || session.context}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`font-bold ${(session.score / session.total_questions) >= 0.7 ? 'text-green-600' :
-                                                    (session.score / session.total_questions) >= 0.5 ? 'text-orange-500' : 'text-red-500'
-                                                    }`}>
-                                                    {session.score}/{session.total_questions}
-                                                </span>
-                                                <span className="text-xs text-slate-400">
-                                                    ({Math.round((session.score / session.total_questions) * 100)}%)
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-500 text-sm font-mono">
-                                            {formatDuration(session.duration_seconds)}
-                                        </td>
-                                    </tr>
-                                ))}
+                                {filteredSessions.map((session) => {
+                                    const isExpanded = expandedSessionId === session.id;
+                                    const quizResults = session.quiz_results ?? [];
+                                    const correctWords = quizResults.filter(r => r.correct);
+                                    const incorrectWords = quizResults.filter(r => !r.correct);
+                                    return (
+                                        <React.Fragment key={session.id}>
+                                            <tr
+                                                onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
+                                                className={`hover:bg-slate-50 transition cursor-pointer ${isExpanded ? 'bg-tal-teal/5' : ''}`}
+                                            >
+                                                <td className="pl-6 pr-1 py-4 w-8 text-slate-400">
+                                                    <span className={`inline-block text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-slate-600">
+                                                    {format(new Date(session.completed_at), "d MMM yyyy HH:mm", { locale: nl })}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-medium text-slate-800">
+                                                        {session.profiles.full_name || session.profiles.email.split('@')[0]}
+                                                    </div>
+                                                    <div className="text-xs text-slate-400">
+                                                        {session.profiles.email}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-tal-teal/10 text-tal-teal-dark border border-tal-teal/20">
+                                                        {session.file_name || session.context}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`font-bold ${(session.score / session.total_questions) >= 0.7 ? 'text-green-600' :
+                                                            (session.score / session.total_questions) >= 0.5 ? 'text-orange-500' : 'text-red-500'
+                                                            }`}>
+                                                            {session.score}/{session.total_questions}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400">
+                                                            ({Math.round((session.score / session.total_questions) * 100)}%)
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-500 text-sm font-mono">
+                                                    {formatDuration(session.duration_seconds)}
+                                                </td>
+                                            </tr>
+                                            {isExpanded && (
+                                                <tr className="bg-slate-50/70 border-b border-slate-200">
+                                                    <td colSpan={6} className="px-6 py-5">
+                                                        {quizResults.length === 0 ? (
+                                                            <p className="text-sm text-slate-500 italic">
+                                                                Geen per-woord data beschikbaar voor deze sessie (oudere sessie van vóór 28 mei 2026).
+                                                            </p>
+                                                        ) : (
+                                                            <div className="space-y-4">
+                                                                <div className="flex items-center gap-4 text-xs">
+                                                                    <span className="flex items-center gap-1.5 text-green-700 font-medium">
+                                                                        <span>✅</span> {correctWords.length} correct
+                                                                    </span>
+                                                                    <span className="flex items-center gap-1.5 text-red-700 font-medium">
+                                                                        <span>❌</span> {incorrectWords.length} fout
+                                                                    </span>
+                                                                </div>
+                                                                {incorrectWords.length > 0 && (
+                                                                    <div>
+                                                                        <p className="text-xs font-semibold text-red-700 uppercase tracking-wider mb-2">
+                                                                            ❌ Fout beantwoord ({incorrectWords.length})
+                                                                        </p>
+                                                                        <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-1 text-sm text-slate-700">
+                                                                            {incorrectWords.map(r => (
+                                                                                <li key={r.word} className="flex items-center gap-2 min-w-0">
+                                                                                    <span className="shrink-0 text-red-500">❌</span>
+                                                                                    <span className="truncate" title={r.word}>{r.word}</span>
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                    </div>
+                                                                )}
+                                                                {correctWords.length > 0 && (
+                                                                    <details className="group">
+                                                                        <summary className="cursor-pointer text-xs font-semibold text-green-700 uppercase tracking-wider mb-2 inline-flex items-center gap-1.5 select-none">
+                                                                            <span className="inline-block text-[10px] group-open:rotate-90 transition-transform">▶</span>
+                                                                            <span>✅ Correct beantwoord ({correctWords.length})</span>
+                                                                        </summary>
+                                                                        <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-1 text-sm text-slate-600 mt-2">
+                                                                            {correctWords.map(r => (
+                                                                                <li key={r.word} className="flex items-center gap-2 min-w-0">
+                                                                                    <span className="shrink-0 text-green-500">✅</span>
+                                                                                    <span className="truncate" title={r.word}>{r.word}</span>
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
+                                                                    </details>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    );
+                                })}
                                 {filteredSessions.length === 0 && (
                                     <tr>
-                                        <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                                        <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                                             Geen oefeningen gevonden met deze filters.
                                         </td>
                                     </tr>
@@ -662,25 +796,81 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                                 </div>
                             </div>
 
-                            {/* Expanded sessions */}
-                            {expandedStudent === student.email && (
-                                <div className="border-t border-slate-100 bg-slate-50 p-3 max-h-48 overflow-y-auto">
-                                    {student.sessions.slice(0, 5).map(s => (
-                                        <div key={s.id} className="flex justify-between text-xs py-1.5 border-b border-slate-100 last:border-0">
-                                            <span className="text-slate-500">{format(new Date(s.completed_at), 'd MMM HH:mm', { locale: nl })}</span>
-                                            <span className="text-slate-600 truncate mx-2 flex-1">{s.file_name || s.context}</span>
-                                            <span className={`font-medium ${(s.score / s.total_questions) >= 0.7 ? 'text-green-600' : 'text-orange-500'}`}>
-                                                {s.score}/{s.total_questions}
-                                            </span>
+                            {/* Expanded — twee secties: lijst-voortgang (NIEUW) + laatste sessies */}
+                            {expandedStudent === student.email && (() => {
+                                const listProgress = getStudentListProgress(student.sessions);
+                                return (
+                                    <div className="border-t border-slate-100 bg-slate-50 p-3 max-h-96 overflow-y-auto space-y-3">
+                                        {/* Per-lijst voortgang */}
+                                        {listProgress.length > 0 && (
+                                            <div className="space-y-2">
+                                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                    📚 Voortgang per lijst
+                                                </p>
+                                                {listProgress.map((p) => (
+                                                    <div key={p.label} className="bg-white rounded-lg border border-slate-200 p-2.5">
+                                                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                            <span className="text-xs font-semibold text-slate-700 truncate" title={p.label}>
+                                                                {p.label}
+                                                            </span>
+                                                            <span className="text-[10px] font-mono shrink-0 text-slate-500">
+                                                                {p.totalCount !== null
+                                                                    ? `${p.practicedCount}/${p.totalCount}`
+                                                                    : `${p.practicedCount} / ?`}
+                                                            </span>
+                                                        </div>
+                                                        {p.progressPercent !== null ? (
+                                                            <>
+                                                                <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                                                    <div
+                                                                        className="h-full transition-all"
+                                                                        style={{
+                                                                            width: `${p.progressPercent}%`,
+                                                                            background: p.progressPercent >= 100
+                                                                                ? 'linear-gradient(90deg, #a855f7 0%, #ec4899 100%)'
+                                                                                : 'linear-gradient(90deg, #14b8a6 0%, #10b981 100%)',
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-400 mt-1">
+                                                                    {p.progressPercent >= 100
+                                                                        ? '✨ Volledig doorlopen'
+                                                                        : `${p.progressPercent}% geoefend`}
+                                                                </p>
+                                                            </>
+                                                        ) : (
+                                                            <p className="text-[10px] text-slate-400 italic">
+                                                                Lijst-grootte onbekend (oude sessies van vóór 28 mei 2026)
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Laatste 5 sessies */}
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                                                🗓️ Laatste sessies
+                                            </p>
+                                            {student.sessions.slice(0, 5).map(s => (
+                                                <div key={s.id} className="flex justify-between text-xs py-1.5 border-b border-slate-100 last:border-0">
+                                                    <span className="text-slate-500">{format(new Date(s.completed_at), 'd MMM HH:mm', { locale: nl })}</span>
+                                                    <span className="text-slate-600 truncate mx-2 flex-1">{s.file_name || s.context}</span>
+                                                    <span className={`font-medium ${(s.score / s.total_questions) >= 0.7 ? 'text-green-600' : 'text-orange-500'}`}>
+                                                        {s.score}/{s.total_questions}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                            {student.sessions.length > 5 && (
+                                                <div className="text-xs text-slate-400 text-center pt-2">
+                                                    + {student.sessions.length - 5} meer sessies
+                                                </div>
+                                            )}
                                         </div>
-                                    ))}
-                                    {student.sessions.length > 5 && (
-                                        <div className="text-xs text-slate-400 text-center pt-2">
-                                            + {student.sessions.length - 5} meer sessies
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     ))}
                     {studentSummaries.length === 0 && (

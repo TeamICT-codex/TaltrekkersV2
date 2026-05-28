@@ -6,6 +6,7 @@ import { usePracticeSession } from './hooks/usePracticeSession';
 import { useAchievements } from './hooks/useAchievements';
 import { useProfileStatsCloudSync } from './hooks/useProfileStatsCloudSync';
 import { useAuth } from './contexts/AuthContext';
+import { prepareResumeList } from './services/wordSelection';
 import Header from './components/Header';
 import WelcomeScreen from './components/WelcomeScreen';
 import Welcome from './components/Welcome';
@@ -152,6 +153,48 @@ const App: React.FC = () => {
   const snakeTokens = activeUserData?.snakeTokens ?? 0;
   const dragonTokens = activeUserData?.dragonTokens ?? 0;
 
+  /**
+   * "Volgende sessie uit deze lijst" — wordt aangeroepen vanuit SessionSummary.
+   * Gebruikt prepareResumeList (services/wordSelection) om de volgende batch
+   * woorden te selecteren uit de opgeslagen wordListProgress, en start meteen
+   * een nieuwe sessie met dezelfde settings als de vorige.
+   *
+   * Bypasst de PracticeSetup-tussenstap → veel snellere flow voor leerlingen
+   * die een lange lijst in meerdere sessies doorlopen.
+   */
+  const handleContinueListNav = useCallback((listId: string) => {
+    if (!activeUserName || !activeUserData) return;
+    const progress = activeUserData.wordListProgress?.[listId];
+    const resumed = prepareResumeList({
+      listId,
+      progress,
+      sessions: activeUserData.sessionHistory,
+    });
+    if (!resumed || resumed.words.length === 0) {
+      console.warn('Kon lijst niet hervatten: geen opgeslagen woorden voor', listId);
+      return;
+    }
+    // Hergebruik settings van vorige sessie (vak-context, AI-model, finaliteit, etc.)
+    // Fallback naar de settings van de net-afgeronde sessie als die er zijn.
+    const lastSettings: PracticeSettings | null = resumed.lastSettings ?? sessionSummaryData?.settings ?? null;
+    const settings: PracticeSettings = lastSettings ? {
+      ...lastSettings,
+      wordsPerSession: resumed.words.length,
+      // FIX #5: expliciet _listAllWords zetten zodat WordListProgress.allWords
+      // niet krimpt bij hervatten van een lijst die met pre-#59 code geoefend werd.
+      _listAllWords: progress?.allWords,
+    } : {
+      showSynonymsAntonyms: true,
+      wordsPerSession: resumed.words.length,
+      context: listId,
+      customFileName: listId,
+      _listAllWords: progress?.allWords,
+    };
+
+    handleCloseSummary();
+    handleStartPractice(activeUserName, resumed.words, settings);
+  }, [activeUserName, activeUserData, sessionSummaryData, handleCloseSummary, handleStartPractice]);
+
   // Cloud-sync van XP/streak/tokens/avatar tussen localStorage en Supabase profiles.
   // Bij login: DB wint (zodat cross-device werkt). Daarna debounced naar DB schrijven.
   // Returnt ook of we net een welkomstbonus hebben toegekend → toast tonen.
@@ -159,15 +202,21 @@ const App: React.FC = () => {
     user, activeUserName, activeUserData, setUserData,
   );
 
-  // Token-viering: detecteer wanneer snake_tokens stijgt (na sessie-einde).
-  // Skip de eerste render (initial hydrate) zodat we niet vieren bij login,
-  // EN skip de stijging die door de welkomstbonus komt — die heeft al z'n eigen
-  // toast en dubbele full-screen confetti zou de toast overschaduwen.
+  // Token-viering: detecteer wanneer snake_tokens stijgt en kies de juiste tekst.
+  // - Eerste-keer login (welkomstbonus): reason='welcome' → "Welkom!" tekst.
+  // - Echte sessie-beloning: reason='session' → "Sterke sessie!" tekst.
+  // Skip de eerste render (initial hydrate via prev=undefined) zodat we niet
+  // vieren bij elke pageload waar oude DB-data binnenkomt.
   const prevSnakeTokensRef = useRef<number | undefined>(undefined);
   const [showTokenCelebration, setShowTokenCelebration] = useState(false);
+  const [celebrationReason, setCelebrationReason] = useState<'session' | 'welcome'>('session');
   useEffect(() => {
     const prev = prevSnakeTokensRef.current;
-    if (prev !== undefined && snakeTokens > prev && !welcomeBonusJustGranted) {
+    if (prev !== undefined && snakeTokens > prev) {
+      // Welkomstbonus is een race tegen de cloud-sync: snapshot pakken zodra
+      // de stijging gedetecteerd wordt, anders zou een latere reset van het
+      // welcomeBonusJustGranted-vlag de juiste reden wegnemen.
+      setCelebrationReason(welcomeBonusJustGranted ? 'welcome' : 'session');
       setShowTokenCelebration(true);
     }
     prevSnakeTokensRef.current = snakeTokens;
@@ -251,6 +300,16 @@ const App: React.FC = () => {
         return null;
       case AppState.SessionSummary:
         if (sessionSummaryData) {
+          // Voortgang voor de huidige lijst (nodig voor "Volgende sessie" knop)
+          const listId = sessionSummaryData.settings?.customFileName
+            || sessionSummaryData.settings?.context
+            || null;
+          const listProgress = (listId && activeUserData?.wordListProgress?.[listId])
+            ? {
+                total: activeUserData.wordListProgress[listId].allWords.length,
+                practiced: activeUserData.wordListProgress[listId].practicedWords.length,
+              }
+            : undefined;
           return (
             <SessionSummary
               summaryData={sessionSummaryData}
@@ -258,6 +317,8 @@ const App: React.FC = () => {
               snakeTokens={snakeTokens}
               dragonTokens={dragonTokens}
               onSpendToken={handleSpendToken}
+              onContinueList={handleContinueListNav}
+              listProgress={listProgress}
             />
           );
         }
@@ -347,16 +408,18 @@ const App: React.FC = () => {
             />
           )}
 
-          {/* Welkomstbonus toast — verschijnt éénmaal bij eerste login */}
-          <WelcomeBonusToast
-            show={welcomeBonusJustGranted}
-            onDismiss={dismissWelcomeBonus}
-          />
-
-          {/* Sneek-token verdiend? Confetti-celebration na sessie-einde */}
+          {/* Sneek-token verdiend? Confetti-celebration — context-aware via 'reason'.
+              Vervangt de oude WelcomeBonusToast: bij eerste login krijg je
+              dezelfde grote viering met aangepaste welkomst-tekst. */}
           <TokenEarnedCelebration
             show={showTokenCelebration}
-            onDismiss={() => setShowTokenCelebration(false)}
+            reason={celebrationReason}
+            onDismiss={() => {
+              setShowTokenCelebration(false);
+              // Markeer de welkomstbonus als gezien zodra de leerling de
+              // viering dismisst, zodat de cloud-sync de vlag kan resetten.
+              if (celebrationReason === 'welcome') dismissWelcomeBonus();
+            }}
           />
         </Suspense>
       </main>

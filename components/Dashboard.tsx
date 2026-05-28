@@ -1,6 +1,6 @@
 
-import React, { useState, useCallback } from 'react';
-import { AllUsersData, SessionRecord, WordLevel, UserData } from '../types';
+import React, { useState, useCallback, useMemo } from 'react';
+import { AllUsersData, SessionRecord, WordLevel, UserData, WordListProgress } from '../types';
 import { UserCircleIcon } from './icons/UserCircleIcon';
 import { ChevronDownIcon } from './icons/ChevronDownIcon';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
@@ -163,11 +163,29 @@ const FeedbackSectionView: React.FC<{ section: FeedbackSectionData }> = React.me
 });
 
 
-const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, onDelete: () => void }> = React.memo(({ session, studentName, onDelete }) => {
+const SessionDetails: React.FC<{
+    session: SessionRecord;
+    studentName: string;
+    onDelete: () => void;
+    /** Voortgang voor deze lijst — gebruikt om "nog niet aan bod"-woorden te tonen. */
+    wordListProgress?: Record<string, WordListProgress>;
+}> = React.memo(({ session, studentName, onDelete, wordListProgress }) => {
     const correctAnswers = session.quizResults.filter(r => r.correct).length;
     const totalQuestions = session.quizResults.length;
     const scorePercentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
     const tags = getSessionTags(session);
+
+    // Voor opgeladen lijsten (customFileName) bouwen we de "nog niet aan bod"
+    // set: alle woorden uit de hele lijst MINUS de woorden die ooit in ENIGE
+    // sessie geoefend zijn (uit wordListProgress.practicedWords). Geeft leerling
+    // overzicht: wat is al langsgekomen vs. wat staat nog op de wachtlijst.
+    const listId = session.settings.customFileName || session.settings.context;
+    const listProgress = listId ? wordListProgress?.[String(listId)] : undefined;
+    const notPracticedWords = useMemo(() => {
+        if (!listProgress || listProgress.allWords.length === 0) return [];
+        const practicedSet = new Set(listProgress.practicedWords.map(w => w.toLowerCase()));
+        return listProgress.allWords.filter(w => !practicedSet.has(w.toLowerCase()));
+    }, [listProgress]);
 
     const [analysis, setAnalysis] = useState<FeedbackSectionData[] | null>(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -200,7 +218,7 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
     return (
         <div className="flex flex-col p-3 border-b border-slate-200 last:border-b-0">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
-                <div className="md:col-span-1 flex flex-col items-start gap-2">
+                <div className="md:col-span-1 flex flex-col items-start gap-2 min-w-0">
                     <div className="flex items-center gap-1 flex-wrap">
                         {tags.map((tag, i) => {
                             const isVakspecifiekTag = tag.startsWith('AF') || tag.startsWith('DF');
@@ -209,28 +227,16 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
                         })}
                     </div>
                     {session.settings.customFileName && (
-                        <div className="flex items-center gap-1 text-xs text-slate-500 mt-1" title="Opgeladen bestand">
-                            <span role="img" aria-label="Bestand">📄</span>
-                            <span className="truncate max-w-[150px] font-medium">
+                        <div
+                            className="flex items-center gap-1 text-xs text-slate-500 w-full min-w-0"
+                            title={session.settings.customFileName}
+                        >
+                            <span role="img" aria-label="Bestand" className="shrink-0">📄</span>
+                            <span className="truncate font-medium">
                                 {session.settings.customFileName}
                             </span>
                         </div>
                     )}
-                    <details className="text-xs mt-1 w-full">
-                        <summary className="cursor-pointer text-slate-500 hover:text-slate-700 select-none">Toon woorden & resultaten</summary>
-                        <ul className="text-slate-600 pt-2 space-y-1">
-                            {session.words.map(word => {
-                                const result = session.quizResults.find(r => r.word.toLowerCase() === word.toLowerCase());
-                                const isCorrect = result ? result.correct : false;
-                                return (
-                                    <li key={word} className="flex items-center gap-2">
-                                        <span title={isCorrect ? 'Correct' : 'Incorrect'}>{isCorrect ? '✅' : '❌'}</span>
-                                        <span>{word}</span>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </details>
                 </div>
                 <div className="text-sm text-slate-500">{new Date(session.date).toLocaleString('nl-NL', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
                 <div className="text-sm font-semibold">
@@ -249,6 +255,52 @@ const SessionDetails: React.FC<{ session: SessionRecord, studentName: string, on
                     */}
                     <button onClick={onDelete} className="text-slate-400 hover:text-red-600" aria-label="Verwijder sessie"><TrashIcon className="h-4 w-4" /></button>
                 </div>
+            </div>
+
+            {/* Expand-secties op VOLLE breedte i.p.v. ingedrukt in de smalle 1/4-kolom.
+                Responsive grid: 2 kolommen op mobiel → 4 op desktop voor overzichtelijke
+                weergave van lange woordenlijsten (bv. 55 woorden zonder lange scroll). */}
+            <div className="mt-2 space-y-1.5">
+                <details className="text-xs w-full group">
+                    <summary className="cursor-pointer text-slate-500 hover:text-slate-700 select-none inline-flex items-center gap-1.5 py-1">
+                        <span className="text-[10px] text-slate-400 group-open:rotate-90 transition-transform inline-block">▶</span>
+                        <span>Toon woorden & resultaten ({session.words.length})</span>
+                    </summary>
+                    <ul className="text-slate-600 pt-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-1">
+                        {session.words.map(word => {
+                            const result = session.quizResults.find(r => r.word.toLowerCase() === word.toLowerCase());
+                            const isCorrect = result ? result.correct : false;
+                            return (
+                                <li key={word} className="flex items-center gap-2 min-w-0">
+                                    <span className="shrink-0" title={isCorrect ? 'Correct' : 'Incorrect'}>
+                                        {isCorrect ? '✅' : '❌'}
+                                    </span>
+                                    <span className="truncate" title={word}>{word}</span>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </details>
+                {notPracticedWords.length > 0 && listProgress && (
+                    <details className="text-xs w-full group">
+                        <summary className="cursor-pointer text-slate-500 hover:text-slate-700 select-none inline-flex items-center gap-1.5 py-1">
+                            <span className="text-[10px] text-slate-400 group-open:rotate-90 transition-transform inline-block">▶</span>
+                            <span>⭕</span>
+                            <span>Nog niet aan bod ({notPracticedWords.length} van {listProgress.allWords.length})</span>
+                        </summary>
+                        <ul className="text-slate-400 pt-2 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-1 opacity-80">
+                            {notPracticedWords.map(word => (
+                                <li key={word} className="flex items-center gap-2 min-w-0">
+                                    <span className="shrink-0" title="Nog niet geoefend">⭕</span>
+                                    <span className="truncate" title={word}>{word}</span>
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="text-[10px] text-slate-400 mt-2 italic">
+                            Deze woorden komen aan bod in een volgende sessie van dezelfde lijst.
+                        </p>
+                    </details>
+                )}
             </div>
 
             {analysisError && <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">{analysisError}</div>}
@@ -321,6 +373,7 @@ const StudentRow: React.FC<{ name: string; data: UserData, onDeleteSession: Dash
                             key={session.date}
                             session={session}
                             studentName={name}
+                            wordListProgress={data.wordListProgress}
                             onDelete={() => {
                                 if (window.confirm(`Sessie van ${new Date(session.date).toLocaleDateString('nl-BE')} verwijderen?`)) {
                                     onDeleteSession(name, session.date);

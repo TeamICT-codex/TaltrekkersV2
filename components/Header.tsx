@@ -9,6 +9,7 @@ import RewardLauncher from './RewardLauncher';
 import KlasSettingsModal from './KlasSettingsModal';
 import TeacherUpgradeModal from './TeacherUpgradeModal';
 import GameSettingsModal from './GameSettingsModal';
+import { resetCurrentUserData } from '../services/db';
 
 const themeOptions: { id: Theme; label: string }[] = [
   { id: 'default', label: 'Standaard' },
@@ -48,6 +49,50 @@ const Header: React.FC<HeaderProps> = ({
   // Rol-helpers — admin is een super-teacher dus erft alle teacher-privileges.
   const isAdmin = role === 'admin';
   const isTeacherOrAdmin = role === 'teacher' || role === 'admin';
+
+  // Reset-knop alleen tonen in dev mode OF voor admins (productie-safety).
+  // Beide groepen kunnen herhaalbare tests doen zonder elkaars data te raken
+  // (de RPC werkt enkel op auth.uid()).
+  const canResetData = import.meta.env.DEV || isAdmin;
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleResetData = async () => {
+    const confirmed = window.confirm(
+      '⚠️ Reset je data?\n\n' +
+      'Dit wist:\n' +
+      '• Alle sessie-historie\n' +
+      '• Voortgang per woordenlijst\n' +
+      '• XP, streak, tokens, achievements\n' +
+      '• Welkomstbonus-vlag (krijg je opnieuw bij volgende login)\n\n' +
+      'Behoudt: naam, klas, finaliteit, avatar.\n\n' +
+      'Niet ongedaan te maken.'
+    );
+    if (!confirmed) return;
+
+    setIsResetting(true);
+    const result = await resetCurrentUserData();
+    if (!result.success) {
+      alert(`Reset mislukt: ${result.error ?? 'onbekende fout'}`);
+      setIsResetting(false);
+      return;
+    }
+
+    // Wis ALLE taltrekkers_* localStorage keys + sessionStorage zodat in-memory
+    // state (useUserData hook, selected-student, teacher-session, intro-seen-vlaggen)
+    // niet de oude data terugplakt. Daarna force-reload zodat alle hooks
+    // opnieuw hydrateren vanuit de schone DB-state.
+    try {
+      const lsKeys = Object.keys(localStorage).filter(k => k.startsWith('taltrekkers_'));
+      lsKeys.forEach(k => localStorage.removeItem(k));
+      const ssKeys = Object.keys(sessionStorage).filter(k => k.startsWith('taltrekkers_'));
+      ssKeys.forEach(k => sessionStorage.removeItem(k));
+    } catch (e) {
+      console.warn('localStorage cleanup faalde (storage geblokkeerd?)', e);
+    }
+
+    // Hard reload — alle React-state weg, hooks rehydrateren vanuit schone Supabase
+    window.location.reload();
+  };
   const isStudent = role === 'student';
 
   const roleLabel =
@@ -260,6 +305,27 @@ const Header: React.FC<HeaderProps> = ({
                           <span>👨‍🏫</span> Ik ben leerkracht
                         </button>
                       </>
+                    )}
+                    {canResetData && (
+                      <button
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          handleResetData();
+                        }}
+                        disabled={isResetting}
+                        className="w-full text-left px-4 py-3 text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition-colors border-t border-themed/50 disabled:opacity-50 disabled:cursor-wait"
+                        title={import.meta.env.DEV
+                          ? 'Dev-only: wist al je data zodat je vanaf nul kan testen'
+                          : 'Admin: wist al je data zodat je vanaf nul kan testen'}
+                      >
+                        <span>🧹</span>
+                        <span className="flex-1">
+                          {isResetting ? 'Bezig met resetten…' : 'Reset mijn data'}
+                          <span className="ml-2 text-[10px] uppercase tracking-wider opacity-60">
+                            {import.meta.env.DEV ? 'dev' : 'admin'}
+                          </span>
+                        </span>
+                      </button>
                     )}
                     <button
                       onClick={() => {

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, isEmailDomainAllowed, formatAllowedDomains } from '../contexts/AuthContext';
 
 // Leerkrachtcode via environment variable — alleen UI-shortcut, echte autorisatie
 // gebeurt server-side via Supabase RLS op basis van profiles.role.
@@ -10,10 +10,15 @@ const TEACHER_SESSION_KEY = 'taltrekkers_teacher_session';
 const TEACHER_ATTEMPTS_KEY = 'taltrekkers_teacher_attempts';
 const MAX_ATTEMPTS = 5;
 
-// Houd in sync met ALLOWED_EMAIL_DOMAIN in AuthContext.
-const ALLOWED_EMAIL_DOMAIN = (
-    (import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN as string | undefined) || 'gotalok.be'
-).toLowerCase();
+// Microsoft-logo als inline SVG — 4-square grid, officiële kleuren
+const MicrosoftLogo: React.FC<{ size?: number }> = ({ size = 18 }) => (
+    <svg width={size} height={size} viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="1"  y="1"  width="9" height="9" fill="#f25022" />
+        <rect x="11" y="1"  width="9" height="9" fill="#7fba00" />
+        <rect x="1"  y="11" width="9" height="9" fill="#00a4ef" />
+        <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+);
 
 interface LoginProps {
     onBack?: () => void;
@@ -24,7 +29,8 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onBack, onTeacherAccess, initialTab = 'email' }) => {
     const [tab, setTab] = useState<'email' | 'teacher'>(initialTab);
     const [loading, setLoading] = useState(false);
-    const { authError, clearAuthError } = useAuth();
+    const [msLoading, setMsLoading] = useState(false);
+    const { authError, clearAuthError, signInWithMicrosoft } = useAuth();
 
     // Email magic link state
     const [email, setEmail] = useState('');
@@ -36,6 +42,17 @@ const Login: React.FC<LoginProps> = ({ onBack, onTeacherAccess, initialTab = 'em
     const [codeError, setCodeError] = useState(false);
     const [teacherMessage, setTeacherMessage] = useState<string | null>(null);
 
+    const handleMicrosoftLogin = async () => {
+        setEmailError(null);
+        clearAuthError();
+        setMsLoading(true);
+        const result = await signInWithMicrosoft();
+        // Bij succesvolle redirect loopt code hier niet meer.
+        if (!result.success) {
+            setMsLoading(false);
+        }
+    };
+
     const handleEmailLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setEmailError(null);
@@ -46,8 +63,8 @@ const Login: React.FC<LoginProps> = ({ onBack, onTeacherAccess, initialTab = 'em
             setEmailError('Vul je schoolmail in.');
             return;
         }
-        if (!trimmed.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`)) {
-            setEmailError(`Alleen schoolaccounts (@${ALLOWED_EMAIL_DOMAIN}) zijn toegestaan.`);
+        if (!isEmailDomainAllowed(trimmed)) {
+            setEmailError(`Alleen schoolaccounts (${formatAllowedDomains()}) zijn toegestaan.`);
             return;
         }
 
@@ -109,11 +126,11 @@ const Login: React.FC<LoginProps> = ({ onBack, onTeacherAccess, initialTab = 'em
             <h1 className="text-3xl font-bold text-tal-purple-dark mb-2">Inloggen</h1>
             <p className="text-slate-600 mb-6 max-w-md">
                 {tab === 'email'
-                    ? 'Log in met je schoolmail om verder te gaan.'
+                    ? 'Log in met je schoolaccount om verder te gaan.'
                     : 'Voor leerkrachten zonder schoolaccount.'}
             </p>
 
-            {/* Tab switcher (Email / leerkracht) */}
+            {/* Tab switcher */}
             <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-full max-w-sm">
                 <button
                     onClick={() => setTab('email')}
@@ -122,7 +139,7 @@ const Login: React.FC<LoginProps> = ({ onBack, onTeacherAccess, initialTab = 'em
                         : 'text-slate-500 hover:text-slate-700'
                     }`}
                 >
-                    Schoolmail
+                    Schoolaccount
                 </button>
                 <button
                     onClick={() => setTab('teacher')}
@@ -137,7 +154,7 @@ const Login: React.FC<LoginProps> = ({ onBack, onTeacherAccess, initialTab = 'em
 
             <div className="w-full max-w-sm">
                 {tab === 'email' && (
-                    <div className="animate-fade-in">
+                    <div className="animate-fade-in space-y-3">
                         {sentTo ? (
                             <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 text-center">
                                 <div className="text-5xl mb-3">📬</div>
@@ -162,39 +179,76 @@ const Login: React.FC<LoginProps> = ({ onBack, onTeacherAccess, initialTab = 'em
                                 </button>
                             </div>
                         ) : (
-                            <form onSubmit={handleEmailLogin} className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 space-y-3">
-                                <div>
-                                    <label htmlFor="login-email" className="block text-left text-sm font-semibold text-slate-700 mb-1">
-                                        Schoolmail
-                                    </label>
-                                    <input
-                                        id="login-email"
-                                        type="email"
-                                        autoComplete="email"
-                                        autoFocus
-                                        value={email}
-                                        onChange={e => { setEmail(e.target.value); setEmailError(null); clearAuthError(); }}
-                                        placeholder={`voornaam.achternaam@${ALLOWED_EMAIL_DOMAIN}`}
-                                        disabled={loading}
-                                        className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-tal-purple focus:border-transparent outline-none transition disabled:opacity-50 ${emailError ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
-                                    />
-                                </div>
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="w-full py-3 bg-tal-purple text-white font-bold rounded-lg hover:bg-tal-purple-dark transition disabled:opacity-50"
-                                >
-                                    {loading ? 'Bezig met versturen…' : 'Stuur login-link →'}
-                                </button>
-                                {(emailError || authError) && (
-                                    <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-left">
-                                        {emailError || authError}
+                            <>
+                                {/* ── Primaire knop: Microsoft ── */}
+                                <div className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100">
+                                    <button
+                                        type="button"
+                                        onClick={handleMicrosoftLogin}
+                                        disabled={msLoading || loading}
+                                        className="w-full flex items-center justify-center gap-3 py-3 px-4 text-white font-bold rounded-xl transition disabled:opacity-60 text-sm shadow-sm"
+                                        style={{ background: msLoading ? '#005a9e' : '#0078d4' }}
+                                    >
+                                        {msLoading ? (
+                                            <>
+                                                <span className="animate-spin inline-block text-sm leading-none">⏳</span>
+                                                <span>Doorsturen naar Microsoft…</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <MicrosoftLogo size={18} />
+                                                <span>Log in met Microsoft</span>
+                                            </>
+                                        )}
+                                    </button>
+                                    <p className="text-xs text-slate-400 mt-2 text-center">
+                                        Office 365-schoolaccount (@gotalok.be)
                                     </p>
-                                )}
-                                <p className="text-xs text-slate-400 text-center">
-                                    Je krijgt een mail met een knop om in te loggen.
-                                </p>
-                            </form>
+                                </div>
+
+                                {/* ── Divider ── */}
+                                <div className="flex items-center gap-2 px-1">
+                                    <div className="flex-1 h-px bg-slate-200" />
+                                    <span className="text-xs text-slate-400 font-medium whitespace-nowrap">
+                                        of via e-maillink
+                                    </span>
+                                    <div className="flex-1 h-px bg-slate-200" />
+                                </div>
+
+                                {/* ── Secundaire knop: magic link ── */}
+                                <form onSubmit={handleEmailLogin} className="bg-white p-4 rounded-2xl shadow-xl border border-slate-100 space-y-3">
+                                    <div>
+                                        <label htmlFor="login-email" className="block text-left text-sm font-semibold text-slate-600 mb-1">
+                                            Schoolmail
+                                        </label>
+                                        <input
+                                            id="login-email"
+                                            type="email"
+                                            autoComplete="email"
+                                            value={email}
+                                            onChange={e => { setEmail(e.target.value); setEmailError(null); clearAuthError(); }}
+                                            placeholder="voornaam.achternaam@gotalok.be"
+                                            disabled={loading || msLoading}
+                                            className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-tal-purple focus:border-transparent outline-none transition disabled:opacity-50 text-sm ${emailError ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
+                                        />
+                                    </div>
+                                    <button
+                                        type="submit"
+                                        disabled={loading || msLoading}
+                                        className="w-full py-2.5 bg-tal-purple text-white font-semibold rounded-lg hover:bg-tal-purple-dark transition disabled:opacity-50 text-sm"
+                                    >
+                                        {loading ? 'Bezig met versturen…' : 'Stuur login-link →'}
+                                    </button>
+                                    {(emailError || authError) && (
+                                        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-left">
+                                            {emailError || authError}
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-slate-400 text-center">
+                                        Je krijgt een mail met een knop om in te loggen.
+                                    </p>
+                                </form>
+                            </>
                         )}
                     </div>
                 )}

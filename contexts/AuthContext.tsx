@@ -9,12 +9,31 @@ const TEACHER_PENDING_KEY = 'taltrekkers_teacher_pending';
 const NAME_PENDING_KEY = 'taltrekkers_pending_name';
 export const SELECTED_STUDENT_KEY = 'taltrekkers_selected_student';
 
-// Alleen MS-accounts uit dit domein zijn toegestaan voor leerlingen.
-// Client-side vangnet — definitieve tenant-lock gebeurt server-side in
-// Supabase Dashboard → Authentication → Providers → Azure (tenant URL).
-const ALLOWED_EMAIL_DOMAIN = (
-    (import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN as string | undefined) || 'gotalok.be'
-).toLowerCase();
+// Toegestane email-domeinen voor zowel magic-link als Microsoft OAuth.
+// Tenant 'Het leercollectief' bevat beide domeinen — leerlingen krijgen
+// typisch een @gotalok.be account, leerkrachten/coördinatoren soms ook
+// @hetleercollectief.be. Client-side vangnet — definitieve tenant-lock
+// gebeurt server-side in Supabase Dashboard → Authentication → Providers
+// → Azure (tenant URL = login.microsoftonline.com/{TENANT_ID}/v2.0).
+//
+// Override via env: VITE_ALLOWED_EMAIL_DOMAINS=domein1,domein2,...
+// Legacy: VITE_ALLOWED_EMAIL_DOMAIN (singular) blijft werken voor backwards-compat.
+export const ALLOWED_EMAIL_DOMAINS: string[] = (
+    (import.meta.env.VITE_ALLOWED_EMAIL_DOMAINS as string | undefined)
+    || (import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN as string | undefined)
+    || 'gotalok.be,hetleercollectief.be'
+).toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+
+/** True als email eindigt op één van de toegestane domeinen. */
+export const isEmailDomainAllowed = (email: string | null | undefined): boolean => {
+    if (!email) return false;
+    const lower = email.toLowerCase();
+    return ALLOWED_EMAIL_DOMAINS.some(domain => lower.endsWith(`@${domain}`));
+};
+
+/** Mens-leesbare lijst voor foutmeldingen: "@gotalok.be of @hetleercollectief.be" */
+export const formatAllowedDomains = (): string =>
+    ALLOWED_EMAIL_DOMAINS.map(d => `@${d}`).join(' of ');
 
 /**
  * Derive een nette display-naam uit email: "thomas.aelbrecht@gotalok.be" → "Thomas Aelbrecht".
@@ -55,6 +74,7 @@ interface AuthContextType {
     setKlasInfo: (finaliteit: Finaliteit, jaargang: Jaargang) => Promise<{ success: boolean; error?: string }>;
     setNativeLanguage: (nativeLanguage: string) => Promise<{ success: boolean; error?: string }>;
     upgradeToTeacher: (code: string) => Promise<{ success: boolean; error?: string; alreadyTeacher?: boolean }>;
+    signInWithMicrosoft: () => Promise<{ success: boolean; error?: string }>;
     signOut: () => Promise<void>;
 }
 
@@ -76,6 +96,7 @@ const AuthContext = createContext<AuthContextType>({
     setKlasInfo: async () => ({ success: false }),
     setNativeLanguage: async () => ({ success: false }),
     upgradeToTeacher: async () => ({ success: false }),
+    signInWithMicrosoft: async () => ({ success: false }),
     signOut: async () => { }
 });
 
@@ -182,14 +203,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             }
         };
 
-        // Domain enforcement helper: alleen @gotalok.be accounts toegestaan.
+        // Domain enforcement: alleen accounts uit ALLOWED_EMAIL_DOMAINS mogen door.
+        // Wordt zowel toegepast op Microsoft OAuth callback als magic-link callback.
         // Bij mismatch: signOut + foutmelding tonen via authError state.
+        // Belangrijke veiligheidslaag: Supabase Azure-provider laat alle users uit
+        // de tenant toe (Het Leercollectief = meerdere domeinen). Wij beperken hier
+        // tot enkel onze schoolgroep (@gotalok.be + @hetleercollectief.be).
         const enforceEmailDomain = async (currentUser: User): Promise<boolean> => {
             const email = currentUser.email?.toLowerCase() ?? '';
-            if (!email.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`)) {
-                console.warn(`Login geweigerd: ${email} is geen @${ALLOWED_EMAIL_DOMAIN} account`);
+            if (!isEmailDomainAllowed(email)) {
+                console.warn(`Login geweigerd: ${email} valt niet binnen toegestane domeinen (${ALLOWED_EMAIL_DOMAINS.join(', ')})`);
                 setAuthError(
-                    `Alleen schoolaccounts (@${ALLOWED_EMAIL_DOMAIN}) zijn toegestaan. ` +
+                    `Alleen schoolaccounts (${formatAllowedDomains()}) zijn toegestaan. ` +
                     `Je bent uitgelogd — log opnieuw in met je Office 365-schoolaccount.`
                 );
                 await supabase.auth.signOut();
@@ -305,6 +330,56 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return result;
     }, [user]);
 
+    /**
+     * Start Microsoft Entra ID (Azure AD) OAuth flow via Supabase.
+     *
+     * Configuratie vereist in Supabase Dashboard → Authentication → Providers → Azure:
+     *   - Enabled: true
+     *   - Client ID + Client Secret van de Entra app-registration
+     *   - Azure Tenant URL: https://login.microsoftonline.com/{TENANT_ID}/v2.0
+     *
+     * In de Entra app-registration (door admin / Dries):
+     *   - Redirect URI: https://<supabase-project>.supabase.co/auth/v1/callback
+     *   - API permissions: openid, profile, email (delegated)
+     *
+     * Vlow: browser → Supabase → Microsoft → Supabase callback → terug naar app
+     * met sessie. `onAuthStateChange` vangt 'SIGNED_IN' op en `enforceEmailDomain`
+     * blokkeert eventuele tenant-users buiten onze toegestane domeinen.
+     *
+     * prompt: 'select_account' dwingt account-picker — handig wanneer een gebruiker
+     * meerdere MS-accounts heeft (privé + school).
+     */
+    const signInWithMicrosoft = useCallback(async () => {
+        clearAuthError();
+        try {
+            const { error } = await supabase.auth.signInWithOAuth({
+                provider: 'azure',
+                options: {
+                    scopes: 'openid profile email',
+                    queryParams: { prompt: 'select_account' },
+                    // redirectTo niet expliciet zetten — Supabase gebruikt Site URL,
+                    // dat is configureerbaar in dashboard zonder code-change nodig.
+                },
+            });
+            if (error) {
+                // Meestal: "Unsupported provider: provider is not enabled"
+                // wanneer Azure-provider nog niet aanstaat in Supabase dashboard.
+                const friendly = /not enabled|unsupported provider/i.test(error.message)
+                    ? 'Microsoft-login is nog niet geactiveerd. Vraag de beheerder om Azure provider aan te zetten in Supabase, of gebruik je schoolmail om in te loggen.'
+                    : `Microsoft-login mislukte: ${error.message}`;
+                setAuthError(friendly);
+                return { success: false, error: friendly };
+            }
+            // signInWithOAuth redirect de browser zelf — code hieronder loopt
+            // typisch niet meer, behalve in popup-modes (die wij niet gebruiken).
+            return { success: true };
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Onbekende fout bij Microsoft-login.';
+            setAuthError(msg);
+            return { success: false, error: msg };
+        }
+    }, [clearAuthError]);
+
     const signOut = useCallback(async () => {
         localStorage.removeItem(TEACHER_PENDING_KEY);
         localStorage.removeItem(NAME_PENDING_KEY);
@@ -318,7 +393,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }, [clearSelectedStudent]);
 
     return (
-        <AuthContext.Provider value={{ session, user, role, klas, finaliteit, jaargang, nativeLanguage, loading, selectedStudent, authError, selectStudent, clearSelectedStudent, clearAuthError, setKlas, setKlasInfo, setNativeLanguage, upgradeToTeacher, signOut }}>
+        <AuthContext.Provider value={{ session, user, role, klas, finaliteit, jaargang, nativeLanguage, loading, selectedStudent, authError, selectStudent, clearSelectedStudent, clearAuthError, setKlas, setKlasInfo, setNativeLanguage, upgradeToTeacher, signInWithMicrosoft, signOut }}>
             {!loading && children}
         </AuthContext.Provider>
     );

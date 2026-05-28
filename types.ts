@@ -41,6 +41,17 @@ export interface PracticeSettings {
   courseId?: string; // De unieke ID van de cursus, bv. 'AF-3e-ELEK'
   customFileName?: string; // De naam van het opgeladen bestand
   enableTTS?: boolean; // TTS audio vooraf genereren voor alle woorden
+
+  /**
+   * Intern: de VOLLEDIGE lijst van woorden uit een opgeladen woordenlijst
+   * (PDF/DOCX/XLSX). Wordt door PracticeSetup.handleStartCustom gevuld bij
+   * elke sessie-start, en gebruikt door usePracticeSession om WordListProgress.
+   * allWords accuraat te houden — onafhankelijk van hoeveel woorden in deze
+   * specifieke sessie zaten. Kritiek voor "Mijn lijsten" hervat-feature.
+   *
+   * Underscore-prefix = conventie voor "intern veld, niet voor UI-display".
+   */
+  _listAllWords?: string[];
 }
 
 export interface QuizResult {
@@ -82,6 +93,12 @@ export interface SessionRecord {
 }
 
 export interface SessionSummaryData {
+  /**
+   * Aantal Sneek-tokens dat in DEZE specifieke sessie verdiend werd (0 of 1).
+   * Onderscheid van `currentUserData.snakeTokens` (accumulatieve teller) — voor
+   * de UI om "🎁 Net vrijgespeeld!" te tonen i.p.v. "🎮 nog X klaar".
+   */
+  earnedSnakeTokens?: number;
   score: number;
   quizResults: QuizResult[];
   words: string[];

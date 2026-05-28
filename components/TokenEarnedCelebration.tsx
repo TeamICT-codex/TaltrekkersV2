@@ -3,6 +3,14 @@ import React, { useEffect, useMemo } from 'react';
 interface TokenEarnedCelebrationProps {
     show: boolean;
     onDismiss: () => void;
+    /**
+     * Aanleiding van de viering — bepaalt welke tekst getoond wordt.
+     *   - 'session': leerling verdiende de token door een sterke sessie (default)
+     *   - 'welcome': leerling logt voor het eerst in en krijgt een welkomstbonus
+     * Het visuele effect (confetti, glow, kaart) blijft identiek; alleen de
+     * heading en body-tekst verschillen.
+     */
+    reason?: 'session' | 'welcome';
 }
 
 const CONFETTI_COLORS = ['#10b981', '#fbbf24', '#f97316', '#f43f5e', '#a855f7', '#22d3ee'];
@@ -12,7 +20,7 @@ const CONFETTI_COLORS = ['#10b981', '#fbbf24', '#f97316', '#f43f5e', '#a855f7', 
  * Auto-dismiss na 4.5 sec — leerling kan ook klikken om eerder weg te gaan.
  * Gebruikt CSS-keyframes inline want Tailwind CDN heeft geen aangepaste animaties.
  */
-const TokenEarnedCelebration: React.FC<TokenEarnedCelebrationProps> = ({ show, onDismiss }) => {
+const TokenEarnedCelebration: React.FC<TokenEarnedCelebrationProps> = ({ show, onDismiss, reason = 'session' }) => {
     useEffect(() => {
         if (!show) return;
         const t = setTimeout(onDismiss, 4500);
@@ -61,8 +69,10 @@ const TokenEarnedCelebration: React.FC<TokenEarnedCelebrationProps> = ({ show, o
                 aria-label="Sluit celebration"
                 className="fixed inset-0 z-50 flex items-center justify-center cursor-pointer overflow-hidden"
                 style={{
-                    background: 'radial-gradient(circle at 50% 40%, rgba(6,78,59,0.65) 0%, rgba(0,0,0,0.75) 70%)',
-                    backdropFilter: 'blur(4px)',
+                    // Veel opaquer dan vroeger — op een wit SessionSummary scherm was 65/75%
+                    // niet donker genoeg, waardoor de witte tekst onleesbaar werd.
+                    background: 'radial-gradient(circle at 50% 40%, rgba(4,47,46,0.94) 0%, rgba(2,6,23,0.97) 70%)',
+                    backdropFilter: 'blur(8px)',
                 }}
             >
                 {/* Confetti regen */}
@@ -85,10 +95,15 @@ const TokenEarnedCelebration: React.FC<TokenEarnedCelebrationProps> = ({ show, o
                     ))}
                 </div>
 
-                {/* Centrale boodschap */}
+                {/* Centrale boodschap — in een eigen kaart-paneel zodat tekst altijd
+                    leesbaar is ongeacht wat eronder ligt. */}
                 <div
-                    className="relative text-center px-8 pointer-events-none"
-                    style={{ animation: 'token-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
+                    className="relative text-center px-8 py-10 mx-4 pointer-events-none rounded-3xl border border-emerald-400/30 max-w-lg"
+                    style={{
+                        animation: 'token-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+                        background: 'linear-gradient(135deg, rgba(6,78,59,0.85) 0%, rgba(2,44,34,0.9) 100%)',
+                        boxShadow: '0 30px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)',
+                    }}
                 >
                     <div
                         className="inline-flex items-center justify-center w-28 h-28 rounded-full text-7xl mb-5 select-none"
@@ -100,14 +115,38 @@ const TokenEarnedCelebration: React.FC<TokenEarnedCelebrationProps> = ({ show, o
                     >
                         🐍
                     </div>
-                    <h2 className="text-4xl md:text-5xl font-extrabold text-white drop-shadow-lg mb-2">
-                        Sneek-token verdiend!
+                    <h2
+                        className="text-4xl md:text-5xl font-extrabold text-white mb-3"
+                        style={{ textShadow: '0 2px 8px rgba(0,0,0,0.6)' }}
+                    >
+                        {reason === 'welcome'
+                            ? 'Welkom! 🎉'
+                            : 'Sneek-token verdiend!'
+                        }
                     </h2>
-                    <p className="text-emerald-100 text-lg max-w-md mx-auto drop-shadow-md">
-                        Sterke sessie! Klik op de <span className="font-bold">🐍 chip</span> in de header
-                        om je beloning op te eten.
+                    <p
+                        className="text-white text-lg max-w-md mx-auto font-medium"
+                        style={{ textShadow: '0 1px 4px rgba(0,0,0,0.5)' }}
+                    >
+                        {reason === 'welcome' ? (
+                            <>
+                                Leuk dat je TALent voor Taal komt ontdekken!
+                                Je krijgt <span className="font-bold">1 Sneek-token</span> cadeau —
+                                klik op de <span className="font-bold">🐍 chip</span> bovenaan om de mini-game uit te proberen.
+                            </>
+                        ) : (
+                            <>
+                                Sterke sessie! Klik op de <span className="font-bold">🐍 chip</span> in de header
+                                om je beloning op te eten.
+                            </>
+                        )}
                     </p>
-                    <p className="text-emerald-200/80 text-xs mt-6">Klik ergens om te sluiten</p>
+                    <p
+                        className="text-emerald-100 text-xs mt-6 font-medium"
+                        style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                    >
+                        Klik ergens om te sluiten
+                    </p>
                 </div>
             </button>
         </>

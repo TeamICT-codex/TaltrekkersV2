@@ -1,6 +1,7 @@
 
 import { FrayerModelData, StoryData, WordLevel, PracticeSettings, QuizQuestion, SessionRecord, QuestionType } from '../types';
 import { supabase } from './supabase';
+import { getVakDomainMap } from '../data/curriculumVakken';
 
 // --- PROXY / SDK HELPER ---
 
@@ -362,33 +363,114 @@ const keyTermsSchema = {
 
 // --- CONTEXT / DIFFICULTY ---
 
+/**
+ * Mapping van richting-codes / vak-tags / niveau-tags naar mens-leesbare domein-
+ * beschrijvingen voor Gemini. Wordt door zowel `getContextInstruction` (voor
+ * Frayer/Quiz/Story) als `buildSubjectGuidance` (voor woord-extractie) gebruikt.
+ *
+ * Bronnen (in volgorde van precedence — eerste match wint):
+ *   1. Hard-coded WordLevel-entries en historische richting-codes (hieronder)
+ *   2. Vakken uit `data/curriculumVakken.ts` (automatisch via getVakDomainMap)
+ *
+ * De curriculumVakken-import dekt ALLE 70+ vakken uit de OneDrive-structuur
+ * (AF/DF/OKAN). Hier hoeven we enkel de niveau-tags en de bestaande richting-
+ * codes (die in oude profielen + URL's voorkomen) handmatig te bewaren.
+ */
+const subjectMap: Record<string, string> = {
+  // ── Vak-mapping uit data/curriculumVakken.ts (70+ vakken, OKAN incl.) ──
+  // Spread komt eerst. Hard-coded entries hieronder OVERSCHRIJVEN deze bij key-
+  // botsing — waardoor de niveau-tags (Woordenschat2DF etc.) en de historische
+  // richting-codes (APPDA, BORGA, ...) altijd hun specifieke beschrijving
+  // behouden voor backwards-compat met oude SessionRecords. Op dit moment geen
+  // overlap in keys met curriculumVakken (richting-codes daar hebben formaat
+  // "APPDA-Informatica", niet "Applicatie- & Databeheer (APPDA)").
+  ...getVakDomainMap(),
+
+  // ── Niveau-tags (algemene woordenlijsten zonder specifiek vak) ──
+  [WordLevel.Woordenschat2DF]: 'algemene schooltaal en vakken in de 2e graad dubbele finaliteit (secundair onderwijs)',
+  [WordLevel.Woordenschat2AF]: 'praktische taal en vakken in de 2e graad arbeidsfinaliteit (beroepsonderwijs)',
+  [WordLevel.AcademischNederlands]: 'academisch taalgebruik en wetenschappelijke teksten',
+  [WordLevel.ProfessioneelNederlands]: 'professioneel taalgebruik op de werkvloer, stage en sollicitaties',
+
+  // ── Richting-codes (historische context-strings: behoud voor backwards-compat) ──
+  'Applicatie- & Databeheer (APPDA)': 'programmeren, databanken, netwerken, softwareontwikkeling en IT-beheer',
+  'Bedrijfsorganisatie (BORGA)': 'kantoorbeheer, administratie, boekhouding, HR-processen en zakelijke communicatie',
+  'Elektromechanische technieken (EMTEC)': 'elektriciteit, mechanica, techniek, machines, onderhoud en automatisering',
+  'Gezondheidszorg (GEZORG)': 'de zorgsector, verpleegkunde, het menselijk lichaam, hygiëne en de omgang met patiënten in een ziekenhuis- of woonzorgcontext',
+  'Internationale Handel & Logistiek (INHAL)': 'internationale handel, import en export, logistieke processen, transportmodi, supply chain management en douane',
+  'Opvoeden en Begeleiden (OPBEG)': 'pedagogisch handelen, ontwikkelingspsychologie, communicatieve vaardigheden en het begeleiden van diverse doelgroepen (zoals kinderen, jongeren en ouderen) in een opvoedkundige context',
+  'Sportbegeleider (SPOBE)': 'sport, beweging, coaching, spelregels, anatomie, trainingsleer en lichamelijke opvoeding',
+  'Wellness & Schoonheid (WESCH)': 'schoonheidszorg, wellness, lichaamsverzorging, gelaatsverzorging, massage, hygiëne en esthetiek',
+  'Onthaal, Organisatie & Sales (ONOSA)': 'onthaal, verkoop, winkelbeheer, administratie en klantvriendelijkheid',
+};
+
+/**
+ * Resolveert een context-string naar zijn vakdomein-beschrijving uit subjectMap,
+ * met fallback naar een generieke "schoolvak"-zin. Geeft null terug als context
+ * leeg is of een bekend WordLevel (geen specifiek vak).
+ */
+const resolveSubjectDomain = (context?: WordLevel | string): string | null => {
+  if (!context) return null;
+  if (typeof context === 'string' && context in subjectMap) {
+    return subjectMap[context];
+  }
+  const knownWordLevels = Object.values(WordLevel) as string[];
+  if (typeof context === 'string' && !knownWordLevels.includes(context)) {
+    return `het schoolvak of de studierichting "${context}"`;
+  }
+  return null;
+};
+
+/**
+ * Bouwt een vakcontext-instructie voor woord-EXTRACTIE uit ruwe tekst. Helpt
+ * Gemini om:
+ *   1. Termen te kiezen die binnen het vakgebied passen
+ *   2. Ambigue woorden (virus = computer-virus i.p.v. ziekte, muis = computer-
+ *      muis i.p.v. dier) correct te interpreteren binnen de vakcontext
+ *   3. Engelse termen en afkortingen te aanvaarden als ze in het vakgebied
+ *      gangbaar zijn (iOS, USB, HTML, Wi-Fi, ...)
+ *
+ * Gebruikt bij `extractKeyTerms`. Bij Frayer/Quiz gebruiken we `getContextInstruction`
+ * die de ambiguïteits-resolutie ook meeneemt voor consistente interpretatie.
+ */
+const buildSubjectGuidance = (context?: WordLevel | string): string => {
+  const domain = resolveSubjectDomain(context);
+  if (!domain) return '';
+
+  return `
+
+VAKCONTEXT: Deze tekst hoort bij ${domain}.
+
+Volg deze regels strikt:
+1. Geef voorrang aan termen die specifiek voor dit vakgebied gangbaar zijn.
+2. Voor ambigue woorden met meerdere betekenissen (bv. "virus", "muis", "cookie", "venster", "veld", "tabel", "blok", "kop", "veld"): selecteer ze ALLEEN als ze in dit vakgebied een specifieke betekenis hebben, en interpreteer ze altijd in die vakcontext.
+3. Engelse termen en afkortingen (bv. iOS, USB, HTML, Wi-Fi, AI, OS, IP, URL, app) zijn welkom als ze in dit vakgebied gangbaar zijn — zelfs als ze geen Nederlandse vertaling hebben.
+4. Vermijd alledaagse woorden die niet vakspecifiek zijn.`;
+};
+
 const getContextInstruction = (context?: WordLevel | string, part: 'definitions' | 'story' | 'questions' = 'definitions'): string => {
   if (!context) return '';
   const relation = part === 'definitions' ? 'gerelateerd zijn aan' : 'zich afspelen in een context die relevant is voor';
 
-  const subjectMap: Record<string, string> = {
-    [WordLevel.Woordenschat2DF]: 'algemene schooltaal en vakken in de 2e graad dubbele finaliteit (secundair onderwijs)',
-    [WordLevel.Woordenschat2AF]: 'praktische taal en vakken in de 2e graad arbeidsfinaliteit (beroepsonderwijs)',
-    [WordLevel.AcademischNederlands]: 'academisch taalgebruik en wetenschappelijke teksten',
-    [WordLevel.ProfessioneelNederlands]: 'professioneel taalgebruik op de werkvloer, stage en sollicitaties',
-    'Applicatie- & Databeheer (APPDA)': 'programmeren, databanken, netwerken, softwareontwikkeling en IT-beheer',
-    'Bedrijfsorganisatie (BORGA)': 'kantoorbeheer, administratie, boekhouding, HR-processen en zakelijke communicatie',
-    'Elektromechanische technieken (EMTEC)': 'elektriciteit, mechanica, techniek, machines, onderhoud en automatisering',
-    'Gezondheidszorg (GEZORG)': 'de zorgsector, verpleegkunde, het menselijk lichaam, hygiëne en de omgang met patiënten in een ziekenhuis- of woonzorgcontext',
-    'Internationale Handel & Logistiek (INHAL)': 'internationale handel, import en export, logistieke processen, transportmodi, supply chain management en douane',
-    'Opvoeden en Begeleiden (OPBEG)': 'pedagogisch handelen, ontwikkelingspsychologie, communicatieve vaardigheden en het begeleiden van diverse doelgroepen (zoals kinderen, jongeren en ouderen) in een opvoedkundige context',
-    'Sportbegeleider (SPOBE)': 'sport, beweging, coaching, spelregels, anatomie, trainingsleer en lichamelijke opvoeding',
-    'Wellness & Schoonheid (WESCH)': 'schoonheidszorg, wellness, lichaamsverzorging, gelaatsverzorging, massage, hygiëne en esthetiek',
-    'Onthaal, Organisatie & Sales (ONOSA)': 'onthaal, verkoop, winkelbeheer, administratie en klantvriendelijkheid',
-  };
-
-  if (context in subjectMap) {
-    return `De voorbeelden en ${part} moeten ${relation} ${subjectMap[context as keyof typeof subjectMap]}.`;
+  if (typeof context === 'string' && context in subjectMap) {
+    const domain = subjectMap[context];
+    const baseInstr = `De voorbeelden en ${part} moeten ${relation} ${domain}.`;
+    // Voor definitions + questions: extra ambiguïteits-resolutie zodat het
+    // Frayer-model en de quiz-vragen consistent in vakcontext blijven, ook
+    // als het woord (bv. "virus") buiten dit vak een andere betekenis heeft.
+    if (part === 'definitions' || part === 'questions') {
+      return `${baseInstr} BELANGRIJK: als het doelwoord meerdere betekenissen heeft (bv. virus, muis, venster, cookie, veld, tabel), kies altijd de betekenis die past binnen ${domain}.`;
+    }
+    return baseInstr;
   }
 
   const knownWordLevels = Object.values(WordLevel) as string[];
   if (typeof context === 'string' && !knownWordLevels.includes(context)) {
-    return `De voorbeelden en ${part} moeten ${relation} het schoolvak of de studierichting "${context}".`;
+    const baseInstr = `De voorbeelden en ${part} moeten ${relation} het schoolvak of de studierichting "${context}".`;
+    if (part === 'definitions' || part === 'questions') {
+      return `${baseInstr} BELANGRIJK: als het doelwoord meerdere betekenissen heeft, kies altijd de betekenis die past binnen dit vakgebied.`;
+    }
+    return baseInstr;
   }
 
   return '';
@@ -699,9 +781,13 @@ export const extractKeyTerms = async (text: string, settings: GenerationSettings
     const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
     const truncatedText = text.slice(0, 25000);
 
+    // Vakcontext-guidance — kritiek voor correcte interpretatie van ambigue
+    // termen ("virus" = computer-virus i.p.v. ziekte voor ICT-context, etc.)
+    const subjectGuidance = buildSubjectGuidance(settings.context);
+
     const result = await callGemini({
       model,
-      contents: `${PROMPT_INJECTION_NOTICE}\n\nAnalyseer de tekst hieronder en extraheer de belangrijkste schooltaalwoorden of vakspecifieke termen (maximaal 100). Vermijd alledaagse woorden. Geef alleen de lijst terug.\n\n${wrapUserContent(truncatedText, 'TEXT')}`,
+      contents: `${PROMPT_INJECTION_NOTICE}\n\nAnalyseer de tekst hieronder en extraheer de belangrijkste schooltaalwoorden of vakspecifieke termen (maximaal 100). Vermijd alledaagse woorden.${subjectGuidance}\n\nGeef alleen de lijst terug.\n\n${wrapUserContent(truncatedText, 'TEXT')}`,
       config: {
         ...aiCallConfig,
         responseMimeType: 'application/json',
