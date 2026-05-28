@@ -210,14 +210,27 @@ const App: React.FC = () => {
   const prevSnakeTokensRef = useRef<number | undefined>(undefined);
   const [showTokenCelebration, setShowTokenCelebration] = useState(false);
   const [celebrationReason, setCelebrationReason] = useState<'session' | 'welcome'>('session');
+
+  // Race-condition fix: `welcomeBonusJustGranted` en `snakeTokens` komen uit
+  // verschillende state-updates in de cloud-sync hook → het flagje kan al
+  // false geworden zijn op het moment dat de token-stijging gedetecteerd wordt.
+  // Houd via een ref bij dat we recent een welkomstbonus hebben *gezien*; de
+  // eerstvolgende token-stijging consumeert die marker zodat we 'welcome'
+  // tonen i.p.v. 'session'.
+  const sawWelcomeBonusRef = useRef(false);
+  useEffect(() => {
+    if (welcomeBonusJustGranted) sawWelcomeBonusRef.current = true;
+  }, [welcomeBonusJustGranted]);
+
   useEffect(() => {
     const prev = prevSnakeTokensRef.current;
     if (prev !== undefined && snakeTokens > prev) {
-      // Welkomstbonus is een race tegen de cloud-sync: snapshot pakken zodra
-      // de stijging gedetecteerd wordt, anders zou een latere reset van het
-      // welcomeBonusJustGranted-vlag de juiste reden wegnemen.
-      setCelebrationReason(welcomeBonusJustGranted ? 'welcome' : 'session');
+      const isWelcome = welcomeBonusJustGranted || sawWelcomeBonusRef.current;
+      setCelebrationReason(isWelcome ? 'welcome' : 'session');
       setShowTokenCelebration(true);
+      // Consumeer de marker: een TWEEDE stijging in dezelfde sessie (= echte
+      // sessie-beloning) wordt nu correct als 'session' gerapporteerd.
+      if (isWelcome) sawWelcomeBonusRef.current = false;
     }
     prevSnakeTokensRef.current = snakeTokens;
   }, [snakeTokens, welcomeBonusJustGranted]);
