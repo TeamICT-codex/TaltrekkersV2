@@ -2,10 +2,6 @@ import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { useAuth, isEmailDomainAllowed, formatAllowedDomains } from '../contexts/AuthContext';
 
-interface WelcomeScreenProps {
-    onTeacherShortcut: () => void;
-}
-
 // Microsoft-logo als inline SVG — 4-square grid, officiële kleuren
 const MicrosoftLogo: React.FC<{ size?: number }> = ({ size = 20 }) => (
     <svg width={size} height={size} viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -16,7 +12,7 @@ const MicrosoftLogo: React.FC<{ size?: number }> = ({ size = 20 }) => (
     </svg>
 );
 
-const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTeacherShortcut }) => {
+const WelcomeScreen: React.FC = () => {
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [msLoading, setMsLoading] = useState(false);
@@ -184,17 +180,6 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onTeacherShortcut }) => {
                     </p>
                 )}
             </div>
-
-            <button
-                onClick={onTeacherShortcut}
-                className="mt-8 text-xs text-slate-400 hover:text-tal-purple underline"
-            >
-                Leerkracht zonder schoolaccount?
-            </button>
-
-            <p className="mt-3 text-xs text-slate-400 text-center max-w-sm">
-                💡 Geen schoolaccount? Vraag het aan je leerkracht.
-            </p>
         </div>
     );
 };

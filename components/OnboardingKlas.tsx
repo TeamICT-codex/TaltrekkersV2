@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Finaliteit, Jaargang } from '../types';
+import TeacherUpgradeModal from './TeacherUpgradeModal';
 
 interface OnboardingKlasProps {
     onComplete: () => void;
@@ -51,6 +52,7 @@ const OnboardingKlas: React.FC<OnboardingKlasProps> = ({ onComplete }) => {
     const [nativeLanguageInput, setNativeLanguageInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showTeacherUpgrade, setShowTeacherUpgrade] = useState(false);
 
     // Voornaam isoleren — "Thomas Aelbrecht" → "Thomas"
     const firstName = selectedStudent?.name?.split(' ')[0] || 'leerling';
@@ -200,6 +202,24 @@ const OnboardingKlas: React.FC<OnboardingKlasProps> = ({ onComplete }) => {
             <p className="mt-4 text-xs text-slate-300 text-center">
                 💡 Je kan dit later altijd wijzigen via je profiel.
             </p>
+
+            {/* Leerkracht-escape: een leerkracht hoeft geen klas/finaliteit te kiezen.
+                Upgrade hier direct → role wordt 'teacher' → App slaat deze onboarding
+                over en routeert naar het Leerkracht Dashboard. */}
+            <div className="mt-6 pt-5 border-t border-white/15 text-center">
+                <button
+                    type="button"
+                    onClick={() => setShowTeacherUpgrade(true)}
+                    className="text-sm text-slate-200 hover:text-white underline underline-offset-2 transition-colors"
+                >
+                    👩‍🏫 Ben je leerkracht? Klik hier
+                </button>
+            </div>
+
+            <TeacherUpgradeModal
+                isOpen={showTeacherUpgrade}
+                onClose={() => setShowTeacherUpgrade(false)}
+            />
         </div>
     );
 };

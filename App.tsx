@@ -11,7 +11,6 @@ import Header from './components/Header';
 import WelcomeScreen from './components/WelcomeScreen';
 import Welcome from './components/Welcome';
 import Spinner from './components/Spinner';
-import { isTeacherLoggedIn } from './components/Login';
 import AvatarSelectorModal, { getAvatarById } from './components/AvatarSelectorModal';
 import WelcomeBonusToast from './components/WelcomeBonusToast';
 import TokenEarnedCelebration from './components/TokenEarnedCelebration';
@@ -63,18 +62,17 @@ const App: React.FC = () => {
   // --- Navigatie ---
   const [appState, setAppState] = useState<AppState>(AppState.LandingChoice);
   const [showLogin, setShowLogin] = useState(false);
-  const [loginInitialTab, setLoginInitialTab] = useState<'email' | 'teacher'>('email');
 
-  // Iedereen behalve LandingChoice/TeacherDashboard vereist een ingelogde Microsoft-user.
+  // Iedereen behalve LandingChoice/TeacherDashboard vereist een ingelogde user.
   // Als de user uitlogt of de sessie verloopt: terug naar LandingChoice.
   // Dev-bypass: in lokale dev skippen we de auth-gate zodat de app vlot te testen is.
   const devBypass = import.meta.env.DEV;
-  const teacherSessionActive = isTeacherLoggedIn();
-  const isAuthenticated = !!user || teacherSessionActive || devBypass;
+  const isAuthenticated = !!user || devBypass;
+  const isTeacher = role === 'teacher' || role === 'admin';
 
   // Leerlingen moeten bij eerste login eenmalig finaliteit + jaargang kiezen.
-  // Leerkrachten zijn niet aan een klas gekoppeld → geen onboarding nodig.
-  // Tijdens dev-bypass zonder echte user: ook overslaan (we hebben geen profile).
+  // Leerkrachten zijn niet aan een klas gekoppeld → role !== 'student' maakt
+  // needsOnboarding false. Dev-bypass zonder echte user: ook overslaan.
   const needsOnboarding = !!user && role === 'student' && (!finaliteit || !jaargang);
 
   useEffect(() => {
@@ -95,6 +93,20 @@ const App: React.FC = () => {
       setAppState(AppState.LandingChoice);
     }
   }, [user, isAuthenticated, appState, devBypass, needsOnboarding]);
+
+  // Leerkracht-landing: stuur een leerkracht/admin éénmalig na login automatisch
+  // naar het Leerkracht Dashboard i.p.v. de leerling-startpagina. Eén keer per
+  // login (ref) zodat een leerkracht die bewust "Terug naar App" klikt niet
+  // telkens teruggekaatst wordt. `role` kan async laat resolven → apart effect
+  // dat reageert zodra isTeacher true wordt.
+  const teacherAutoRoutedRef = useRef(false);
+  useEffect(() => {
+    if (!user) { teacherAutoRoutedRef.current = false; return; }
+    if (isTeacher && !teacherAutoRoutedRef.current && appState === AppState.Welcome) {
+      teacherAutoRoutedRef.current = true;
+      setAppState(AppState.TeacherDashboard);
+    }
+  }, [user, isTeacher, appState]);
 
   // --- Navigatie callbacks ---
   const showDashboard = useCallback(() => setAppState(AppState.Dashboard), []);
@@ -278,12 +290,7 @@ const App: React.FC = () => {
     switch (appState) {
       case AppState.LandingChoice:
         return (
-          <WelcomeScreen
-            onTeacherShortcut={() => {
-              setLoginInitialTab('teacher');
-              setShowLogin(true);
-            }}
-          />
+          <WelcomeScreen />
         );
       case AppState.Onboarding:
         return <OnboardingKlas onComplete={() => setAppState(AppState.Welcome)} />;
@@ -386,12 +393,7 @@ const App: React.FC = () => {
                   ✕
                 </button>
                 <Login
-                  initialTab={loginInitialTab}
                   onBack={() => setShowLogin(false)}
-                  onTeacherAccess={() => {
-                    setShowLogin(false);
-                    setAppState(AppState.TeacherDashboard);
-                  }}
                 />
               </div>
             </div>
