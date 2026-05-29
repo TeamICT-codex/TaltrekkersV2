@@ -81,7 +81,7 @@ const TeacherUpgradeModal: React.FC<TeacherUpgradeModalProps> = ({ isOpen, onClo
                         </div>
                     ) : (
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            <p className="text-muted text-sm">
+                            <p className="text-secondary text-sm">
                                 Voer de leerkracht-code in die je via je collega's of de coördinator hebt gekregen.
                                 Daarna heb je toegang tot het Dashboard met sessies van alle leerlingen.
                             </p>
@@ -99,7 +99,7 @@ const TeacherUpgradeModal: React.FC<TeacherUpgradeModalProps> = ({ isOpen, onClo
                                         placeholder="Voer de code in…"
                                         disabled={loading}
                                         autoFocus
-                                        className={`w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-2 focus:ring-tal-purple bg-surface transition disabled:opacity-50 ${error ? 'border-red-400 bg-red-50/40' : 'border-themed'}`}
+                                        className={`w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-2 focus:ring-tal-purple bg-white text-slate-900 placeholder:text-slate-400 transition disabled:opacity-50 ${error ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
                                     />
                                     <button
                                         type="button"
@@ -107,7 +107,7 @@ const TeacherUpgradeModal: React.FC<TeacherUpgradeModalProps> = ({ isOpen, onClo
                                         disabled={loading}
                                         title={showCode ? 'Verberg code' : 'Toon code'}
                                         aria-label={showCode ? 'Verberg code' : 'Toon code'}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-lg hover:bg-black/5 text-muted text-lg transition disabled:opacity-50"
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-lg hover:bg-black/5 text-slate-500 text-lg transition disabled:opacity-50"
                                     >
                                         {showCode ? '🙈' : '👁️'}
                                     </button>

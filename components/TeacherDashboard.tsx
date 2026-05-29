@@ -82,6 +82,16 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     /** Welke sessie-rij in de Sessies-tab is uitgeklapt voor de quiz-resultaten? */
     const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
     const [finaliteitFilter, setFinaliteitFilter] = useState<string>('all');
+    // Snelstart-uitleg: standaard open de eerste keer, daarna onthouden we de keuze.
+    const [showHelp, setShowHelp] = useState(() => {
+        try { const v = localStorage.getItem('taltrekkers_teacher_help_open'); return v === null ? true : v === 'true'; }
+        catch { return true; }
+    });
+    const toggleHelp = () => setShowHelp(prev => {
+        const next = !prev;
+        try { localStorage.setItem('taltrekkers_teacher_help_open', String(next)); } catch { /* storage geblokkeerd */ }
+        return next;
+    });
     const [jaargangFilter, setJaargangFilter] = useState<string>('all');
     const [klasFilter, setKlasFilter] = useState<string>('all');
 
@@ -396,6 +406,31 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                 >
                     Terug naar App
                 </button>
+            </div>
+
+            {/* Snelstart — compacte, inklapbare uitleg voor leerkrachten */}
+            <div className="bg-tal-purple/5 border border-tal-purple/20 rounded-xl mb-6 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={toggleHelp}
+                    aria-expanded={showHelp}
+                    className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-tal-purple/10 transition text-left"
+                >
+                    <span className="font-semibold text-tal-purple-dark flex items-center gap-2">
+                        <span>ℹ️</span> Snelstart — hoe werkt dit dashboard?
+                    </span>
+                    <span className={`text-tal-purple text-sm transition-transform ${showHelp ? 'rotate-180' : ''}`} aria-hidden>▾</span>
+                </button>
+                {showHelp && (
+                    <ul className="px-5 pb-4 pt-1 space-y-2 text-sm text-slate-600 animate-fade-in">
+                        <li><strong className="text-slate-700">📋 Sessies</strong> — elke afgewerkte oefening. Klik een rij open (▶) om te zien welke woorden goed of fout waren.</li>
+                        <li><strong className="text-slate-700">👥 Leerlingen</strong> — per leerling de gemiddelde score + voortgang per opgeladen woordenlijst.</li>
+                        <li><strong className="text-slate-700">📝 Klaslijst</strong> — beheer welke leerlingen tot je klas behoren.</li>
+                        <li><strong className="text-slate-700">🔍 Filters</strong> — beperk op datum, klas, finaliteit of jaargang, of zoek een leerling op naam.</li>
+                        <li><strong className="text-slate-700">📤 Export CSV</strong> — download de resultaten voor je puntenboek.</li>
+                        <li className="text-slate-500">💡 Via <strong>"Terug naar App"</strong> kan je zelf woordenlijsten uittesten zoals een leerling ze ziet.</li>
+                    </ul>
+                )}
             </div>
 
             {/* Statistics Cards */}

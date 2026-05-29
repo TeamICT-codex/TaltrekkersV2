@@ -101,30 +101,35 @@ export function selectWordsForSession({
         };
     }
 
-    // CASE 2 + 3: cyclus-eind. Pak alle ongeoefende + consolidatie.
-    const newWords = ongeoefend; // alle ongeoefende
-    const needed = sessionSize - newWords.length;
+    // CASE 2 + 3: cyclus-eind. ENKEL nog-ongeoefende woorden + woorden die in
+    // eerdere sessies fout zaten. We vullen NIET meer aan met reeds-juiste
+    // woorden — een leerling moet niet zinloos woorden herhalen die hij al kent.
+    // Gevolg: de sessie mag korter zijn dan sessionSize (bv. 2 nieuw + 1 fout).
+    // De sessionSize fungeert hier als bovengrens, niet als doel.
+    const newWords = ongeoefend; // alle ongeoefende (in PDF-volgorde)
+    const remainingCapacity = Math.max(0, sessionSize - newWords.length);
 
-    // Eerst: woorden die in eerdere sessies fout zaten (consolidatie-prioriteit)
-    const incorrectInList = geoefend.filter(w => incorrectSet.has(w.toLowerCase()));
-    const incorrectFallback = incorrectInList.slice(0, needed);
+    // Woorden die ooit fout zaten in deze lijst — consolidatie. Beperk tot de
+    // resterende capaciteit zodat de sessie niet groter wordt dan sessionSize.
+    const incorrectToReview = geoefend
+        .filter(w => incorrectSet.has(w.toLowerCase()))
+        .slice(0, remainingCapacity);
 
-    // Daarna: random aanvulling uit overige geoefende (niet in incorrect-set)
-    let randomFallback: string[] = [];
-    if (incorrectFallback.length < needed) {
-        const stillNeeded = needed - incorrectFallback.length;
-        const restGeoefend = geoefend.filter(w => !incorrectSet.has(w.toLowerCase()));
-        // Fisher-Yates shuffle voor onpartijdige random selectie
-        const shuffled = shuffleInPlace([...restGeoefend]);
-        randomFallback = shuffled.slice(0, stillNeeded);
-    }
+    // Dedupe (defensief, met behoud van volgorde: nieuw eerst, dan fout).
+    const seenSel = new Set<string>();
+    const words = [...newWords, ...incorrectToReview].filter(w => {
+        const k = w.toLowerCase();
+        if (seenSel.has(k)) return false;
+        seenSel.add(k);
+        return true;
+    });
 
     return {
-        words: [...newWords, ...incorrectFallback, ...randomFallback],
+        words,
         isCycleEnd: true,
         newCount: newWords.length,
-        reviewIncorrectCount: incorrectFallback.length,
-        reviewRandomCount: randomFallback.length,
+        reviewIncorrectCount: words.length - newWords.length,
+        reviewRandomCount: 0,
     };
 }
 

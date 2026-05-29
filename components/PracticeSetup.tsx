@@ -324,6 +324,10 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
             alert("Deze lijst heeft geen opgeslagen woorden. Upload de lijst opnieuw.");
             return;
         }
+        if (resumed.words.length === 0) {
+            alert("🎉 Je hebt deze lijst volledig beheerst — er zijn geen nieuwe of foute woorden meer om te herhalen!");
+            return;
+        }
 
         // Bouw settings: hergebruik vorige sessie's settings (vak-context, finaliteit
         // etc.), of fallback naar minimale defaults. Huidige UI-keuzes (aiModel,

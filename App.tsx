@@ -183,7 +183,8 @@ const App: React.FC = () => {
       sessions: activeUserData.sessionHistory,
     });
     if (!resumed || resumed.words.length === 0) {
-      console.warn('Kon lijst niet hervatten: geen opgeslagen woorden voor', listId);
+      // Niets meer te oefenen: alle woorden geoefend én geen foute meer over.
+      window.alert("🎉 Je hebt deze lijst volledig beheerst — er zijn geen nieuwe of foute woorden meer om te herhalen!");
       return;
     }
     // Hergebruik settings van vorige sessie (vak-context, AI-model, finaliteit, etc.)
@@ -351,6 +352,7 @@ const App: React.FC = () => {
             allUsersData={allUsersData}
             onStartStoryChallenge={handleStartStoryChallenge}
             onShowAvatarSelector={activeUserName ? () => setIsAvatarSelectorOpen(true) : undefined}
+            onShowTeacherDashboard={() => setAppState(AppState.TeacherDashboard)}
           />
         );
     }

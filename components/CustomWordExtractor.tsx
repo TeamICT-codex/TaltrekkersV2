@@ -240,7 +240,25 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         return lookupProgress(effectiveListId);
     }, [effectiveListId, lookupProgress]);
 
+    // Werkelijke sessie-selectie vooraf berekend — gebruikt voor zowel de
+    // knop-tekst (toont het ECHTE aantal) als de start. Bij een bijna-voltooide
+    // lijst is dit minder dan de gekozen lengte: enkel nog-ongeoefende +
+    // eerder-foute woorden, géén reeds-juiste woorden.
+    const sessionSelection = useMemo(() => {
+        if (extractedTerms.length === 0) return null;
+        const incorrectWords = fileName ? (getIncorrectWordsForFile?.(fileName) ?? []) : [];
+        return selectWordsForSession({
+            allWords: extractedTerms,
+            practicedWords: effectiveProgress?.practicedWords,
+            incorrectWords,
+            sessionSize: selectedLength,
+        });
+    }, [extractedTerms, effectiveProgress, fileName, getIncorrectWordsForFile, selectedLength]);
+    const sessionWordCount = sessionSelection?.words.length ?? 0;
+
     const handleStart = () => {
+        if (!sessionSelection || sessionSelection.words.length === 0) return;
+
         // Vak-keuze (in dropdown na upload) wint van uploadContext-fallback.
         // Voorbeeld: leerling uploadt ICT-lijst, kiest "ICT" → effectiveContext
         // = "ICT" → Frayer interpreteert "virus" als computer-virus.
@@ -248,22 +266,9 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
             || (hideContextInput ? defaultContext : context)
             || 'Algemeen';
 
-        // Sluitende-cyclus selectie: ongeoefend EERST (in PDF-volgorde), bij
-        // cyclus-eind aangevuld met foute woorden uit eerdere sessies en (als
-        // dat ook niet genoeg is) random uit overige geoefende.
-        const incorrectWords = fileName
-            ? (getIncorrectWordsForFile?.(fileName) ?? [])
-            : [];
-        const selection = selectWordsForSession({
-            allWords: extractedTerms,
-            practicedWords: effectiveProgress?.practicedWords,
-            incorrectWords,
-            sessionSize: selectedLength,
-        });
-
         // Shuffle ENKEL voor presentatie — heeft geen invloed op WELKE woorden
-        // gekozen zijn (helper heeft die al deterministisch bepaald).
-        const presentedWords = shuffleArray(selection.words);
+        // gekozen zijn (sessionSelection is al deterministisch bepaald).
+        const presentedWords = shuffleArray(sessionSelection.words);
 
         // Geef alle woorden door voor tracking (extractedTerms is de volledige lijst,
         // presentedWords is de geselecteerde subset voor deze sessie).
@@ -329,9 +334,9 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                     )}
                 </div>
 
-                {/* Cyclus-eind banner: bij volgende sessie minder dan N nieuwe woorden,
-                    dus aanvulling met foute woorden uit eerdere sessies. */}
-                {isCycleEnd && (
+                {/* Cyclus-eind banner: bijna-voltooide lijst. Toont accuraat wat de
+                    sessie bevat (nieuw + eerder-fout), niet meer "aangevuld met al-gekende". */}
+                {isCycleEnd && sessionWordCount > 0 && (
                     <div
                         className="p-3 rounded-xl border"
                         style={{
@@ -347,12 +352,15 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                                 {isFullyPracticed ? (
                                     <>
                                         <strong>Consolidatie-sessie:</strong> je hebt deze lijst helemaal doorlopen.
-                                        Deze sessie focust op woorden die je in eerdere rondes nog fout had.
+                                        Je herhaalt enkel de {sessionWordCount} woord{sessionWordCount === 1 ? '' : 'en'} die je eerder fout had.
                                     </>
                                 ) : (
                                     <>
-                                        <strong>Bijna rond!</strong> Nog {unpracticedCount} nieuwe woord{unpracticedCount === 1 ? '' : 'en'}.
-                                        Deze sessie wordt aangevuld met woorden uit eerdere rondes die je fout had — extra oefening op je zwakke punten.
+                                        <strong>Bijna rond!</strong> Je oefent de laatste {unpracticedCount} nieuwe woord{unpracticedCount === 1 ? '' : 'en'}
+                                        {(sessionSelection?.reviewIncorrectCount ?? 0) > 0
+                                            ? ` + ${sessionSelection!.reviewIncorrectCount} die je eerder fout had`
+                                            : ''}.
+                                        Geen woorden die je al kent.
                                     </>
                                 )}
                             </span>
@@ -439,14 +447,23 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                     </div>
                 </div>
 
-                {/* Start knop */}
+                {/* Start knop — toont het ECHTE aantal (kan minder zijn dan de gekozen
+                    lengte bij een bijna-voltooide lijst). */}
                 <button
                     onClick={handleStart}
-                    disabled={!studentName.trim()}
+                    disabled={!studentName.trim() || sessionWordCount === 0}
                     className="w-full px-8 py-4 bg-tal-purple text-white font-bold text-lg rounded-xl shadow-lg hover:bg-tal-purple-dark transform active:scale-[0.98] transition-all duration-300 focus:outline-none focus:ring-4 ring-tal-purple/50 disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                 >
-                    <span role="img" aria-label="Raket">🚀</span> Start met {selectedLength} woorden
+                    <span role="img" aria-label="Raket">🚀</span>
+                    {sessionWordCount === 0
+                        ? 'Lijst volledig beheerst 🎉'
+                        : `Start met ${sessionWordCount} woord${sessionWordCount === 1 ? '' : 'en'}`}
                 </button>
+                {sessionWordCount > 0 && sessionWordCount < selectedLength && (
+                    <p className="text-xs text-slate-300 text-center -mt-1">
+                        Deze lijst is bijna rond — je oefent de {sessionWordCount} resterende {sessionWordCount === 1 ? 'woord' : 'woorden'}, niet wat je al kent.
+                    </p>
+                )}
 
                 {/* Bekijk alle woorden (verborgen) */}
                 <div className="text-sm">

@@ -11,14 +11,18 @@ interface WelcomeProps {
     allUsersData: AllUsersData;
     onStartStoryChallenge: (userName: string, aiModel: PracticeSettings['aiModel']) => void;
     onShowAvatarSelector?: () => void;
+    /** Snelkoppeling naar het Leerkracht Dashboard — alleen relevant voor leerkrachten. */
+    onShowTeacherDashboard?: () => void;
 }
 
-const Welcome: React.FC<WelcomeProps> = ({ onStartPractice, onShowDashboard, allUsersData, onStartStoryChallenge, onShowAvatarSelector }) => {
+const Welcome: React.FC<WelcomeProps> = ({ onStartPractice, onShowDashboard, allUsersData, onStartStoryChallenge, onShowAvatarSelector, onShowTeacherDashboard }) => {
     const {
-        selectedStudent, clearSelectedStudent, selectStudent, user, signOut,
+        selectedStudent, clearSelectedStudent, selectStudent, user, signOut, role,
         klas, setKlas,
         nativeLanguage: profileNativeLanguage, setNativeLanguage: saveNativeLanguage,
     } = useAuth();
+    // Leerkrachten/admins zien de leerling-kant ter preview — klas/moedertaal is voor hen niet relevant.
+    const isTeacher = role === 'teacher' || role === 'admin';
     const [studentName, setStudentName] = useState(selectedStudent?.name ?? '');
     const [nativeLanguage, setNativeLanguage] = useState(profileNativeLanguage ?? '');
     const [nativeLangSaveState, setNativeLangSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -160,48 +164,73 @@ const Welcome: React.FC<WelcomeProps> = ({ onStartPractice, onShowDashboard, all
 
                                 {/* Inputs rechts — klas eerst (belangrijker), moedertaal eronder */}
                                 <div className="flex-1 min-w-0 space-y-3">
-                                    {/* Klas-veld — alleen voor ingelogde leerlingen */}
-                                    {user && (
+                                    {isTeacher ? (
+                                        /* Leerkracht-weergave: klas/moedertaal zijn niet relevant.
+                                           Toon context + een snelkoppeling terug naar het dashboard. */
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                                                <span>👩‍🏫 Leerkracht-weergave</span>
+                                            </p>
+                                            <p className="text-sm text-slate-200 leading-snug">
+                                                Dit is de leerling-kant — handig om woordenlijsten te previewen of samen met de klas te oefenen.
+                                                Wat jij hier oefent telt niet mee als leerling-voortgang.
+                                            </p>
+                                            {onShowTeacherDashboard && (
+                                                <button
+                                                    type="button"
+                                                    onClick={onShowTeacherDashboard}
+                                                    className="mt-1 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tal-gold text-tal-teal-dark font-bold text-sm hover:scale-[1.02] active:scale-95 transition shadow"
+                                                >
+                                                    📊 Naar Leerkracht Dashboard
+                                                </button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                      <>
+                                        {/* Klas-veld — alleen voor ingelogde leerlingen */}
+                                        {user && (
+                                            <div>
+                                                <label htmlFor="student-klas" className="text-xs font-semibold flex items-center gap-2 uppercase tracking-wider text-slate-200">
+                                                    <span>📚 Mijn klas</span>
+                                                    {klasSaveState === 'saving' && <span className="text-[10px] text-amber-300 normal-case tracking-normal">opslaan…</span>}
+                                                    {klasSaveState === 'saved' && <span className="text-[10px] text-green-300 normal-case tracking-normal">✓ opgeslagen</span>}
+                                                    {klasSaveState === 'error' && <span className="text-[10px] text-red-300 normal-case tracking-normal">⚠ niet opgeslagen</span>}
+                                                </label>
+                                                <input
+                                                    id="student-klas"
+                                                    type="text"
+                                                    value={klasInput}
+                                                    onChange={(e) => setKlasInput(e.target.value)}
+                                                    onBlur={handleSaveKlas}
+                                                    placeholder="bv. AF 5e, OKAN Fase 2…"
+                                                    className="w-full p-2.5 mt-1 border-2 border-white/20 bg-white/10 rounded-lg focus:ring-2 focus:ring-tal-purple transition placeholder:text-slate-400 text-white text-sm"
+                                                    aria-label="Klas van de leerling"
+                                                />
+                                            </div>
+                                        )}
+
                                         <div>
-                                            <label htmlFor="student-klas" className="text-xs font-semibold flex items-center gap-2 uppercase tracking-wider text-slate-200">
-                                                <span>📚 Mijn klas</span>
-                                                {klasSaveState === 'saving' && <span className="text-[10px] text-amber-300 normal-case tracking-normal">opslaan…</span>}
-                                                {klasSaveState === 'saved' && <span className="text-[10px] text-green-300 normal-case tracking-normal">✓ opgeslagen</span>}
-                                                {klasSaveState === 'error' && <span className="text-[10px] text-red-300 normal-case tracking-normal">⚠ niet opgeslagen</span>}
+                                            <label htmlFor="native-language" className="text-xs font-semibold flex items-center gap-2 uppercase tracking-wider text-slate-200">
+                                                <span>🌍 Moedertaal</span>
+                                                <span className="text-[10px] text-slate-400 normal-case tracking-normal">(optioneel)</span>
+                                                {nativeLangSaveState === 'saving' && <span className="text-[10px] text-slate-300 normal-case tracking-normal">opslaan…</span>}
+                                                {nativeLangSaveState === 'saved' && <span className="text-[10px] text-green-300 normal-case tracking-normal">✓ opgeslagen</span>}
+                                                {nativeLangSaveState === 'error' && <span className="text-[10px] text-red-300 normal-case tracking-normal">⚠ niet opgeslagen</span>}
                                             </label>
                                             <input
-                                                id="student-klas"
+                                                id="native-language"
                                                 type="text"
-                                                value={klasInput}
-                                                onChange={(e) => setKlasInput(e.target.value)}
-                                                onBlur={handleSaveKlas}
-                                                placeholder="bv. AF 5e, OKAN Fase 2…"
+                                                value={nativeLanguage}
+                                                onChange={(e) => setNativeLanguage(e.target.value)}
+                                                onBlur={user ? handleSaveNativeLanguage : undefined}
+                                                placeholder="bv. Frans, Arabisch, Turks…"
                                                 className="w-full p-2.5 mt-1 border-2 border-white/20 bg-white/10 rounded-lg focus:ring-2 focus:ring-tal-purple transition placeholder:text-slate-400 text-white text-sm"
-                                                aria-label="Klas van de leerling"
+                                                aria-label="Moedertaal van de leerling"
+                                                maxLength={50}
                                             />
                                         </div>
+                                      </>
                                     )}
-
-                                    <div>
-                                        <label htmlFor="native-language" className="text-xs font-semibold flex items-center gap-2 uppercase tracking-wider text-slate-200">
-                                            <span>🌍 Moedertaal</span>
-                                            <span className="text-[10px] text-slate-400 normal-case tracking-normal">(optioneel)</span>
-                                            {nativeLangSaveState === 'saving' && <span className="text-[10px] text-slate-300 normal-case tracking-normal">opslaan…</span>}
-                                            {nativeLangSaveState === 'saved' && <span className="text-[10px] text-green-300 normal-case tracking-normal">✓ opgeslagen</span>}
-                                            {nativeLangSaveState === 'error' && <span className="text-[10px] text-red-300 normal-case tracking-normal">⚠ niet opgeslagen</span>}
-                                        </label>
-                                        <input
-                                            id="native-language"
-                                            type="text"
-                                            value={nativeLanguage}
-                                            onChange={(e) => setNativeLanguage(e.target.value)}
-                                            onBlur={user ? handleSaveNativeLanguage : undefined}
-                                            placeholder="bv. Frans, Arabisch, Turks…"
-                                            className="w-full p-2.5 mt-1 border-2 border-white/20 bg-white/10 rounded-lg focus:ring-2 focus:ring-tal-purple transition placeholder:text-slate-400 text-white text-sm"
-                                            aria-label="Moedertaal van de leerling"
-                                            maxLength={50}
-                                        />
-                                    </div>
                                 </div>
                             </div>
 
