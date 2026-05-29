@@ -292,7 +292,7 @@ const Header: React.FC<HeaderProps> = ({
                             }}
                             className="w-full text-left px-4 py-3 text-tal-purple-dark hover:bg-tal-purple/5 flex items-center gap-2 transition-colors font-medium"
                           >
-                            <span>🎨</span> Wijzig avatar
+                            <span>😀</span> Wijzig avatar
                           </button>
                         )}
                         <button

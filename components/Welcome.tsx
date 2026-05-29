@@ -281,7 +281,7 @@ const Welcome: React.FC<WelcomeProps> = ({ onStartPractice, onShowDashboard, all
                                     <div className="bg-green-500 rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0 shadow-sm">3</div>
                                     <div>
                                         <h4 className="font-bold">Groei naar meesterschap</h4>
-                                        <p className="text-sm text-slate-200">Doe de quiz, verdien XP en speel de unieke Verhaaluitdaging vrij!</p>
+                                        <p className="text-sm text-slate-200">Doe de quiz en verdien XP. Bij sterke sessies ontgrendel je een 🐍 Sneek-token, en je avatar groeit mee. Wie weet wat er nog te ontdekken valt…</p>
                                     </div>
                                 </li>
                             </ul>

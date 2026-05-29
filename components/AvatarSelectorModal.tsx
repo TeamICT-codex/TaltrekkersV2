@@ -14,6 +14,10 @@ export const AVATARS: Avatar[] = [
     { id: 'detective', emoji: '🕵️', name: 'Woordspeurder', cost: 1500 },
     { id: 'star', emoji: '⭐', name: 'Superster', cost: 2000 },
     { id: 'lion', emoji: '🦁', name: 'Taalleeuw', cost: 3000 },
+    { id: 'owl', emoji: '🦉', name: 'Wijze uil', cost: 4000 },
+    { id: 'dragon', emoji: '🐉', name: 'Taaldraak', cost: 6000 },
+    { id: 'crown', emoji: '👑', name: 'Woordkoning', cost: 8000 },
+    { id: 'trophy', emoji: '🏆', name: 'Legende', cost: 10000 },
 ];
 
 export const getAvatarById = (avatarId: string | undefined): Avatar => {

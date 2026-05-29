@@ -36,6 +36,7 @@ interface SessionWithProfile {
         full_name: string | null;
         email: string;
         klas: string | null;
+        points: number | null;
     };
 }
 
@@ -60,6 +61,8 @@ interface StudentSummary {
     lastActive: Date;
     isInactive: boolean;
     isStruggling: boolean;
+    /** Totale XP-saldo van de leerling (uit profiles.points). 0 indien onbekend. */
+    xp: number;
 }
 
 interface DashboardProps {
@@ -67,7 +70,7 @@ interface DashboardProps {
 }
 
 type DateFilter = 'today' | 'week' | 'all';
-type ViewMode = 'sessions' | 'students' | 'roster';
+type ViewMode = 'sessions' | 'students' | 'roster' | 'leaderboard';
 
 const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     const { role } = useAuth();
@@ -124,7 +127,8 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         profiles (
                             email,
                             full_name,
-                            klas
+                            klas,
+                            points
                         )
                     `)
                     .order('completed_at', { ascending: false });
@@ -303,6 +307,10 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
             const lastActive = new Date(Math.max(...studentSessions.map(s => new Date(s.completed_at).getTime())));
             const daysInactive = differenceInDays(new Date(), lastActive);
 
+            // XP komt uit het profiel (zelfde voor elke sessie van de leerling).
+            // Neem de hoogste waarde die we zien, robuust tegen oudere rijen.
+            const xp = Math.max(0, ...studentSessions.map(s => s.profiles.points ?? 0));
+
             return {
                 email,
                 name: studentSessions[0].profiles.full_name || email.split('@')[0],
@@ -311,10 +319,17 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                 avgScore,
                 lastActive,
                 isInactive: daysInactive >= 7,
-                isStruggling: avgScore < 50
+                isStruggling: avgScore < 50,
+                xp,
             };
         }).sort((a, b) => b.lastActive.getTime() - a.lastActive.getTime());
     }, [filteredSessions]);
+
+    // Ranglijst: leerlingen gesorteerd op XP (hoogste eerst). Leerkracht-only.
+    const leaderboard = useMemo(
+        () => [...studentSummaries].sort((a, b) => b.xp - a.xp),
+        [studentSummaries]
+    );
 
     const formatDuration = (seconds: number) => {
         const minutes = Math.floor(seconds / 60);
@@ -555,6 +570,12 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                     >
                         📝 Klaslijst
                     </button>
+                    <button
+                        onClick={() => setViewMode('leaderboard')}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition ${viewMode === 'leaderboard' ? 'bg-white shadow-sm' : 'hover:bg-slate-200'}`}
+                    >
+                        🏆 Ranglijst
+                    </button>
                 </div>
 
                 {/* Export Button */}
@@ -791,6 +812,49 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                             </table>
                         )}
                     </div>
+                </div>
+            ) : viewMode === 'leaderboard' ? (
+                /* RANGLIJST VIEW — leerlingen gesorteerd op XP (leerkracht-only).
+                   Respecteert de actieve filters (datum/klas/zoeken), zodat je
+                   bv. ook per klas een ranglijst krijgt. */
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-200">
+                        <h2 className="text-lg font-bold text-slate-800">🏆 XP-ranglijst</h2>
+                        <p className="text-sm text-slate-500">
+                            Leerlingen gerangschikt op totale XP. Alleen zichtbaar voor jou als leerkracht.
+                        </p>
+                    </div>
+                    {leaderboard.length === 0 ? (
+                        <div className="px-6 py-12 text-center text-slate-400">
+                            Nog geen leerlingen met activiteit voor deze filters.
+                        </div>
+                    ) : (
+                        <ul className="divide-y divide-slate-100">
+                            {leaderboard.map((s, idx) => {
+                                const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                                return (
+                                    <li key={s.email} className="flex items-center gap-4 px-6 py-3 hover:bg-slate-50/60 transition">
+                                        <div className="w-9 text-center text-lg font-bold text-slate-500 shrink-0">
+                                            {medal ?? <span className="text-sm">#{idx + 1}</span>}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-medium text-slate-800 truncate">{s.name}</div>
+                                            <div className="text-xs text-slate-400 truncate">{s.email}</div>
+                                        </div>
+                                        {s.sessions[0]?.profiles.klas && (
+                                            <span className="hidden sm:inline-flex text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+                                                {s.sessions[0].profiles.klas}
+                                            </span>
+                                        )}
+                                        <div className="text-right shrink-0 w-20">
+                                            <span className="font-bold text-tal-purple">{s.xp.toLocaleString('nl-BE')}</span>
+                                            <span className="text-xs text-slate-400 ml-1">XP</span>
+                                        </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
                 </div>
             ) : (
                 /* STUDENTS VIEW */

@@ -72,6 +72,12 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
     // Vak-keuze na upload — bepalend voor Gemini-context bij Frayer/Quiz.
     // Wordt gereset bij resetState zodat een volgende upload opnieuw vraagt.
     const [selectedVakId, setSelectedVakId] = useState<string | null>(null);
+    // Sentinel: leerling kiest "Ander vak…" en typt zelf een korte vak-naam.
+    const CUSTOM_VAK = '__custom__';
+    const [customVak, setCustomVak] = useState('');
+    const isCustomVak = selectedVakId === CUSTOM_VAK;
+    // Resolveert de vak-keuze: bij "Ander vak" de getypte tekst, anders de vak-id.
+    const resolvedVak = (isCustomVak ? customVak.trim() : selectedVakId) || '';
     const [context, setContext] = useState('');
     const [fileName, setFileName] = useState<string | null>(null);
     const [showAllWords, setShowAllWords] = useState(false);
@@ -97,6 +103,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         setShowAllWords(false);
         setPdfTruncated(false);
         setSelectedVakId(null);
+        setCustomVak('');
     };
 
     const extractTextFromPdf = async (file: File): Promise<string> => {
@@ -231,7 +238,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
     // gebruikt: `customFileName || context || 'general'`. Voor file-uploads = de
     // bestandsnaam. Voor text-paste in 'Eigen woorden' tab = de context-string.
     const effectiveListId = fileName
-        || selectedVakId
+        || resolvedVak
         || (hideContextInput ? defaultContext : context)
         || null;
 
@@ -262,7 +269,7 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
         // Vak-keuze (in dropdown na upload) wint van uploadContext-fallback.
         // Voorbeeld: leerling uploadt ICT-lijst, kiest "ICT" → effectiveContext
         // = "ICT" → Frayer interpreteert "virus" als computer-virus.
-        const effectiveContext = selectedVakId
+        const effectiveContext = resolvedVak
             || (hideContextInput ? defaultContext : context)
             || 'Algemeen';
 
@@ -376,10 +383,10 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                     <div
                         className="p-3 rounded-xl border"
                         style={{
-                            background: selectedVakId
+                            background: resolvedVak
                                 ? 'rgba(16,185,129,0.15)'
                                 : 'rgba(251,191,36,0.15)',
-                            borderColor: selectedVakId
+                            borderColor: resolvedVak
                                 ? 'rgba(110,231,183,0.40)'
                                 : 'rgba(251,191,36,0.45)',
                         }}
@@ -402,15 +409,34 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                                     {vak.label}
                                 </option>
                             ))}
+                            <option value={CUSTOM_VAK} className="bg-tal-teal-dark text-white">
+                                ✏️ Ander vak…
+                            </option>
                         </select>
-                        {!selectedVakId ? (
+
+                        {/* Vrij veld voor de uitzondering dat het vak niet in de lijst staat.
+                            Begrensd (max 40 tekens). Geauthenticeerd + zichtbaar in het
+                            leerkracht-dashboard → misbruik is herleidbaar. */}
+                        {isCustomVak && (
+                            <input
+                                type="text"
+                                value={customVak}
+                                onChange={(e) => setCustomVak(e.target.value)}
+                                maxLength={40}
+                                autoFocus
+                                placeholder="bv. Zorgkunde, Mechanica, Sociale wetenschappen…"
+                                className="w-full mt-2 p-2.5 rounded-lg bg-white text-slate-900 placeholder:text-slate-400 border border-white/20 text-sm focus:ring-2 focus:ring-amber-300 outline-none"
+                            />
+                        )}
+
+                        {!resolvedVak ? (
                             <p className="text-xs text-amber-200/90 mt-2 leading-snug">
                                 💡 Tip: ICT-woorden zoals <strong>"virus"</strong> of <strong>"cookie"</strong> krijgen
                                 dan de IT-betekenis i.p.v. de alledaagse uitleg.
                             </p>
                         ) : (
                             <p className="text-xs text-emerald-200 mt-2 leading-snug">
-                                ✓ AI weet nu dat dit een {availableVakken.find(v => v.id === selectedVakId)?.label}-lijst is.
+                                ✓ AI weet nu dat dit een <strong>{isCustomVak ? customVak.trim() : availableVakken.find(v => v.id === selectedVakId)?.label}</strong>-lijst is.
                             </p>
                         )}
                     </div>
