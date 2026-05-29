@@ -600,19 +600,48 @@ Genereer een vraag voor elk van de volgende woorden: ${words.join(', ')}.`;
       const jsonString = cleanJsonOutput(result.text ?? '');
       const rawQuestions = JSON.parse(jsonString) as QuizQuestion[];
 
-      if (!rawQuestions || rawQuestions.length !== words.length) {
+      if (!rawQuestions || rawQuestions.length === 0) {
         throw new Error('Ongeldige quizdata ontvangen van de AI.');
       }
 
-      const processedQuestions = rawQuestions.map((q, index) => {
+      // Bind elke gegenereerde vraag aan het JUISTE doelwoord. Gemini levert
+      // soms (zeker bij kleine sets van 2-3 woorden) vragen in een andere
+      // volgorde, dupliceert een woord of laat er één vallen. De oude
+      // length-check ving dat niet → een woord verscheen dubbel en een ander
+      // (bv. het foute woord uit de vorige sessie) ontbrak.
+      const byWord = new Map<string, QuizQuestion>();
+      for (const q of rawQuestions) {
+        const key = (q.woord ?? '').toLowerCase().trim();
+        if (key && !byWord.has(key)) byWord.set(key, q);
+      }
+      const allMatched = words.every(w => byWord.has(w.toLowerCase().trim()));
+
+      // Als niet elk woord een eigen vraag heeft: opnieuw proberen. Pas op de
+      // LAATSTE poging vallen we gracieus terug op positie (zie hieronder), zodat
+      // de leerling nooit een harde fout krijgt als Gemini een woord blijft
+      // parafraseren.
+      if (!allMatched && i < MAX_QUIZ_RETRIES - 1) {
+        throw new Error('AI leverde niet voor elk woord een unieke vraag — opnieuw.');
+      }
+
+      // Eén bronvraag per gevraagd woord, in input-volgorde:
+      //   1. exacte match op 'woord' (inhoud klopt met het label)
+      //   2. fallback op positie (rawQuestions[index]) als de match faalt
+      //   3. laatste fallback: cyclisch hergebruik zodat er nooit een gat valt
+      // Het 'woord'-label wordt verderop altijd geforceerd op words[index],
+      // dus dit garandeert: exact words.length vragen, elk woord precies één keer.
+      const sourceQuestions: QuizQuestion[] = words.map((w, idx) =>
+        byWord.get(w.toLowerCase().trim())
+        ?? rawQuestions[idx]
+        ?? rawQuestions[idx % rawQuestions.length]
+      );
+
+      const processedQuestions = sourceQuestions.map((q, index) => {
+        const targetWord = words[index];
         const cleanedOptions = q.opties.map(o => o.trim().replace(/\.$/, ''));
-        const currentQ = { ...q, opties: cleanedOptions };
 
         if (index % 3 === 0) {
-          const targetWord = words[index];
-          const originalDef = models[index].definitie;
-          const censoredDef = censorTargetWord(originalDef, targetWord);
-
+          const censoredDef = censorTargetWord(models[index].definitie, targetWord);
           return {
             ...q,
             type: QuestionType.Writing,
@@ -622,7 +651,8 @@ Genereer een vraag voor elk van de volgende woorden: ${words.join(', ')}.`;
             woord: targetWord,
           };
         }
-        return { ...currentQ, type: QuestionType.MultipleChoice };
+        // MC: forceer het doelwoord zodat het label altijd klopt met de input.
+        return { ...q, opties: cleanedOptions, type: QuestionType.MultipleChoice, woord: targetWord };
       });
 
       return processedQuestions;
