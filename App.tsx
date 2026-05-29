@@ -214,38 +214,36 @@ const App: React.FC = () => {
     user, activeUserName, activeUserData, setUserData,
   );
 
-  // Token-viering: detecteer wanneer snake_tokens stijgt en kies de juiste tekst.
-  // - Eerste-keer login (welkomstbonus): reason='welcome' → "Welkom!" tekst.
-  // - Echte sessie-beloning: reason='session' → "Sterke sessie!" tekst.
-  // Skip de eerste render (initial hydrate via prev=undefined) zodat we niet
-  // vieren bij elke pageload waar oude DB-data binnenkomt.
-  const prevSnakeTokensRef = useRef<number | undefined>(undefined);
+  // Token-viering — EVENT-gedreven, niet via snakeTokens-diff.
+  // De oude diff-aanpak vuurde ten onrechte bij login/logout/userswitch: de
+  // hydrate van 0 → DB-waarde (tokens die de leerling al HAD) zag eruit als
+  // "net verdiend". Nu reageren we op de twee echte bronnen:
   const [showTokenCelebration, setShowTokenCelebration] = useState(false);
   const [celebrationReason, setCelebrationReason] = useState<'session' | 'welcome'>('session');
 
-  // Race-condition fix: `welcomeBonusJustGranted` en `snakeTokens` komen uit
-  // verschillende state-updates in de cloud-sync hook → het flagje kan al
-  // false geworden zijn op het moment dat de token-stijging gedetecteerd wordt.
-  // Houd via een ref bij dat we recent een welkomstbonus hebben *gezien*; de
-  // eerstvolgende token-stijging consumeert die marker zodat we 'welcome'
-  // tonen i.p.v. 'session'.
-  const sawWelcomeBonusRef = useRef(false);
+  // 1. Welkomstbonus — vuurt exact wanneer de cloud-sync de bonus toekent.
   useEffect(() => {
-    if (welcomeBonusJustGranted) sawWelcomeBonusRef.current = true;
+    if (welcomeBonusJustGranted) {
+      setCelebrationReason('welcome');
+      setShowTokenCelebration(true);
+    }
   }, [welcomeBonusJustGranted]);
 
+  // 2. Sessie-beloning — vuurt wanneer een net-afgeronde sessie een token
+  //    opleverde (earnedSnakeTokens > 0). Ref-guard op de summary-referentie
+  //    zodat dezelfde sessie niet dubbel viert. Onafhankelijk van hydrate/login.
+  const celebratedSummaryRef = useRef<unknown>(null);
   useEffect(() => {
-    const prev = prevSnakeTokensRef.current;
-    if (prev !== undefined && snakeTokens > prev) {
-      const isWelcome = welcomeBonusJustGranted || sawWelcomeBonusRef.current;
-      setCelebrationReason(isWelcome ? 'welcome' : 'session');
+    if (
+      sessionSummaryData &&
+      sessionSummaryData !== celebratedSummaryRef.current &&
+      (sessionSummaryData.earnedSnakeTokens ?? 0) > 0
+    ) {
+      celebratedSummaryRef.current = sessionSummaryData;
+      setCelebrationReason('session');
       setShowTokenCelebration(true);
-      // Consumeer de marker: een TWEEDE stijging in dezelfde sessie (= echte
-      // sessie-beloning) wordt nu correct als 'session' gerapporteerd.
-      if (isWelcome) sawWelcomeBonusRef.current = false;
     }
-    prevSnakeTokensRef.current = snakeTokens;
-  }, [snakeTokens, welcomeBonusJustGranted]);
+  }, [sessionSummaryData]);
 
   // Profielstats voor de Header — XP, streak, avatar emoji/naam.
   // Avatar wordt globaal in App.tsx beheerd zodat zowel Header (knop) als
