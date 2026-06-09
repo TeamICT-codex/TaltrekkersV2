@@ -12,6 +12,19 @@ interface RegisteredStudent {
     created_at: string;
 }
 
+/** Volledig leerling-profiel uit `profiles` — óók leerlingen zonder enkele sessie,
+ *  zodat de leerkracht zijn hele klas ziet, niet enkel wie iets afmaakte (Onderdeel D). */
+interface StudentProfile {
+    id: string;
+    email: string | null;
+    full_name: string | null;
+    klas: string | null;
+    finaliteit: string | null;
+    jaargang: string | null;
+    points: number | null;
+    created_at: string;
+}
+
 interface SessionQuizResult {
     word: string;
     correct: boolean;
@@ -75,9 +88,14 @@ type ViewMode = 'sessions' | 'students' | 'roster' | 'leaderboard';
 const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     const { role } = useAuth();
     const [sessions, setSessions] = useState<SessionWithProfile[]>([]);
+    // Volledige klaslijst (alle leerling-profielen, ook zonder sessie) — Onderdeel D.
+    const [allStudents, setAllStudents] = useState<StudentProfile[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [dateFilter, setDateFilter] = useState<DateFilter>('today');
+    // Default 'all': de leerkracht wil standaard zijn héle klas / alle sessies zien
+    // (niet enkel vandaag of deze week — dat toonde vaak ten onrechte een leeg
+    // dashboard). Inzoomen op een periode kan altijd via de knoppen.
+    const [dateFilter, setDateFilter] = useState<DateFilter>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('all');
     const [viewMode, setViewMode] = useState<ViewMode>('sessions');
@@ -143,6 +161,18 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
             }
         };
 
+        // Volledige klaslijst uit `profiles` — álle leerlingen, ook zonder
+        // sessie. Zo ziet de leerkracht zijn hele klas, niet enkel wie iets
+        // afmaakte (Onderdeel D). RLS staat teachers toe alle profielen te lezen.
+        const fetchAllStudents = async () => {
+            const { data } = await supabase
+                .from('profiles')
+                .select('id, email, full_name, klas, finaliteit, jaargang, points, created_at')
+                .eq('role', 'student')
+                .order('full_name', { ascending: true });
+            if (data) setAllStudents(data as StudentProfile[]);
+        };
+
 
         // Echte autorisatie loopt via Supabase RLS. We tonen de UI alleen aan
         // gebruikers met role='teacher' OF role='admin' in profiles. Admin is
@@ -150,6 +180,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         if (role === 'teacher' || role === 'admin') {
             fetchSessions();
             fetchRoster();
+            fetchAllStudents();
         } else if (role === null) {
             // Auth state nog niet geladen — wacht
             return;
@@ -331,6 +362,62 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         [studentSummaries]
     );
 
+    // ── Volledige klas (Onderdeel D) ───────────────────────────────────
+    // De Leerlingen-view toonde enkel leerlingen mét een sessie in de gekozen
+    // periode, waardoor wie niets (of niets deze week) afmaakte "verdween".
+    // We tonen nu de héle klas, met status per leerling.
+
+    // All-time activiteit per leerling (los van het datumfilter) — om
+    // "nog nooit iets afgewerkt" te onderscheiden van "wel geoefend, maar
+    // niet in deze periode".
+    const allTimeActivity = useMemo(() => {
+        const map = new Map<string, { count: number; lastActive: number }>();
+        sessions.forEach(s => {
+            const email = s.profiles?.email;
+            if (!email) return;
+            const prev = map.get(email);
+            map.set(email, {
+                count: (prev?.count ?? 0) + 1,
+                lastActive: Math.max(prev?.lastActive ?? 0, new Date(s.completed_at).getTime()),
+            });
+        });
+        return map;
+    }, [sessions]);
+
+    // Leerlingen zónder sessie in de huidige periode — de "ontbrekende"
+    // leerlingen die je collega miste.
+    const inactiveStudents = useMemo(() => {
+        const activeEmails = new Set(studentSummaries.map(s => s.email));
+        return allStudents
+            .filter(p => !p.email || !activeEmails.has(p.email))
+            .map(p => {
+                const activity = p.email ? allTimeActivity.get(p.email) : undefined;
+                return {
+                    id: p.id,
+                    email: p.email,
+                    name: p.full_name || (p.email ? p.email.split('@')[0] : 'Onbekend'),
+                    klas: p.klas,
+                    onboarded: !!(p.finaliteit && p.jaargang),
+                    totalSessions: activity?.count ?? 0,
+                    lastActive: activity ? new Date(activity.lastActive) : null,
+                };
+            })
+            .sort((a, b) => {
+                if (a.lastActive && b.lastActive) return b.lastActive.getTime() - a.lastActive.getTime();
+                if (a.lastActive) return -1;
+                if (b.lastActive) return 1;
+                return a.name.localeCompare(b.name);
+            });
+    }, [allStudents, studentSummaries, allTimeActivity]);
+
+    // Tellers voor de overzichtsregel bovenaan de Leerlingen-view.
+    const rosterCounts = useMemo(() => ({
+        total: allStudents.length,
+        activeThisPeriod: studentSummaries.length,
+        neverStarted: inactiveStudents.filter(s => s.onboarded && s.totalSessions === 0).length,
+        notOnboarded: inactiveStudents.filter(s => !s.onboarded).length,
+    }), [allStudents.length, studentSummaries.length, inactiveStudents]);
+
     const formatDuration = (seconds: number) => {
         const minutes = Math.floor(seconds / 60);
         const secs = seconds % 60;
@@ -401,6 +488,34 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         URL.revokeObjectURL(url);
     };
 
+    // ── Lege-staat hint ────────────────────────────────────────────────
+    // Verduidelijkt dat een leeg dashboard ≠ "niemand heeft geoefend":
+    // (a) je bekijkt mogelijk maar een deel van de periode, en
+    // (b) enkel volledig afgeronde oefeningen belanden hier.
+    const periodNoun = dateFilter === 'today' ? 'vandaag' : dateFilter === 'week' ? 'deze week' : null;
+    const emptyStateContent = (
+        <div className="flex flex-col items-center gap-3 text-center">
+            <p className="text-slate-400">
+                {periodNoun
+                    ? `Geen afgeronde oefeningen ${periodNoun} met deze filters.`
+                    : 'Geen afgeronde oefeningen gevonden met deze filters.'}
+            </p>
+            {dateFilter !== 'all' && (
+                <>
+                    <button
+                        onClick={() => setDateFilter('all')}
+                        className="px-4 py-2 rounded-lg bg-tal-purple text-white text-sm font-medium hover:bg-tal-purple-dark transition"
+                    >
+                        📊 Toon alle sessies
+                    </button>
+                    <p className="text-xs text-slate-400 max-w-md">
+                        💡 Een lege lijst betekent niet automatisch dat er niet geoefend is: enkel <strong>volledig afgeronde</strong> oefeningen verschijnen hier, en je bekijkt nu enkel <strong>{periodNoun}</strong>.
+                    </p>
+                </>
+            )}
+        </div>
+    );
+
     if (loading) return (
         <div className="flex justify-center items-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-tal-purple"></div>
@@ -442,6 +557,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         <li><strong className="text-slate-700">👥 Leerlingen</strong> — per leerling de gemiddelde score + voortgang per opgeladen woordenlijst.</li>
                         <li><strong className="text-slate-700">📝 Klaslijst</strong> — beheer welke leerlingen tot je klas behoren.</li>
                         <li><strong className="text-slate-700">🔍 Filters</strong> — beperk op datum, klas, finaliteit of jaargang, of zoek een leerling op naam.</li>
+                        <li><strong className="text-slate-700">📅 Periode</strong> — standaard zie je <strong>alle sessies</strong>. Wil je inzoomen op vandaag of deze week? Gebruik de periode-knoppen. Let op: enkel <strong>volledig afgeronde</strong> oefeningen verschijnen hier.</li>
                         <li><strong className="text-slate-700">📤 Export CSV</strong> — download de resultaten voor je puntenboek.</li>
                         <li className="text-slate-500">💡 Via <strong>"Terug naar App"</strong> kan je zelf woordenlijsten uittesten zoals een leerling ze ziet.</li>
                     </ul>
@@ -711,8 +827,8 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                                 })}
                                 {filteredSessions.length === 0 && (
                                     <tr>
-                                        <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
-                                            Geen oefeningen gevonden met deze filters.
+                                        <td colSpan={6} className="px-6 py-12">
+                                            {emptyStateContent}
                                         </td>
                                     </tr>
                                 )}
@@ -857,8 +973,19 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                     )}
                 </div>
             ) : (
-                /* STUDENTS VIEW */
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                /* STUDENTS VIEW — volledige klas met status (Onderdeel D) */
+                <div className="space-y-6">
+                    {/* Overzichtsregel: hoeveel van de klas is actief? */}
+                    {allStudents.length > 0 && (
+                        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 text-sm text-slate-600">
+                            <strong className="text-slate-800">{rosterCounts.activeThisPeriod}</strong> van <strong className="text-slate-800">{rosterCounts.total}</strong> leerlingen actief{periodNoun ? ` ${periodNoun}` : ''}
+                            {rosterCounts.neverStarted > 0 && <> · <strong className="text-slate-800">{rosterCounts.neverStarted}</strong> nog niet gestart</>}
+                            {rosterCounts.notOnboarded > 0 && <> · <strong className="text-slate-800">{rosterCounts.notOnboarded}</strong> onboarding niet afgerond</>}
+                        </div>
+                    )}
+
+                    {studentSummaries.length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {studentSummaries.map((student) => (
                         <div
                             key={student.email}
@@ -972,9 +1099,48 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                             })()}
                         </div>
                     ))}
-                    {studentSummaries.length === 0 && (
-                        <div className="col-span-full text-center py-12 text-slate-400">
-                            Geen leerlingen gevonden met deze filters.
+                    </div>
+                    )}
+
+                    {/* Leerlingen zonder activiteit in deze periode — de "ontbrekende"
+                        leerlingen. Compacte kaart met status. (Onderdeel D) */}
+                    {inactiveStudents.length > 0 && (
+                        <div>
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                Nog geen activiteit{periodNoun ? ` ${periodNoun}` : ''} ({inactiveStudents.length})
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {inactiveStudents.map(s => (
+                                    <div key={s.id} className="bg-white/70 rounded-xl border border-dashed border-slate-200 p-4">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="font-semibold text-slate-700 truncate">{s.name}</div>
+                                                <div className="text-xs text-slate-400 truncate">{s.email || '—'}</div>
+                                            </div>
+                                            {s.klas && (
+                                                <span className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{s.klas}</span>
+                                            )}
+                                        </div>
+                                        <div className="mt-3 text-xs">
+                                            {!s.onboarded ? (
+                                                <span className="text-orange-600">🚧 Onboarding niet afgerond</span>
+                                            ) : s.totalSessions === 0 ? (
+                                                <span className="text-slate-500">💤 Nog geen sessie afgewerkt</span>
+                                            ) : (
+                                                <span className="text-slate-500">
+                                                    🕐 Laatst actief {s.lastActive ? format(s.lastActive, 'd MMM', { locale: nl }) : '—'} · {s.totalSessions} sessie{s.totalSessions === 1 ? '' : 's'} totaal
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {allStudents.length === 0 && studentSummaries.length === 0 && (
+                        <div className="py-12">
+                            {emptyStateContent}
                         </div>
                     )}
                 </div>

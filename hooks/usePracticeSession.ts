@@ -197,7 +197,7 @@ export function usePracticeSession({
     // de leerling kiest bewust om terug te gaan naar wat moeilijk was. Belonen
     // we extra zodat het ook in XP/tokens voelbaar wordt:
     //   - XP-bonus van 2x op de behaalde score
-    //   - Sneek-drempel verlaagd naar ≥80% + ≥5 woorden (vs default ≥90% + ≥10)
+    //   - Sneek-drempel verlaagd naar ≥65% + ≥5 woorden (vs default ≥75% + ≥10)
     //     omdat weak-word lijsten vaak kort zijn én de woorden moeilijker.
     // Detectie via customFileName-marker die handlePracticeWeakWords zet.
     const isWeakWordsSession = practiceSettings.customFileName === 'weak-words';
@@ -206,13 +206,14 @@ export function usePracticeSession({
     const newPoints = (currentUserData.points || 0) + earnedXP;
 
     // Reward tokens — voor MVP enkel Sneek-tokens.
-    // Default drempel: ≥90% accuracy + ≥10 vragen. Bewust streng zodat de game
-    // écht voelt als een verdiende beloning, niet als consumptie-artikel.
+    // Default drempel: ≥75% accuracy + ≥10 vragen (verlaagd van 90% → 75% in juni
+    // 2026 — meer leerlingen belonen en gemotiveerd houden weegt nu zwaarder dan
+    // strengheid; de beloning moet nog steeds verdiend voelen, maar haalbaarder zijn).
     //
     // Droak-tokens worden voorlopig NIET meer uitgekeerd (game heeft geen echte
     // gameplay-loop). DB-velden blijven bestaan voor een mogelijke v2-feature.
     const accuracy = quizResults.length > 0 ? sessionScore / quizResults.length : 0;
-    const snakeAccuracyThreshold = isWeakWordsSession ? 0.8 : 0.9;
+    const snakeAccuracyThreshold = isWeakWordsSession ? 0.65 : 0.75;
     const snakeMinQuestions = isWeakWordsSession ? 5 : 10;
     const earnedSnakeTokens = accuracy >= snakeAccuracyThreshold && quizResults.length >= snakeMinQuestions ? 1 : 0;
     const lastCheckpoint = currentUserData.lastXpRewardCheckpoint ?? 0;
