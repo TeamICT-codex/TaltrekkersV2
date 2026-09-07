@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QuizQuestion, QuizResult, QuestionType, PracticeSettings } from '../types';
 import { CheckIcon } from './icons/CheckIcon';
 import { XIcon } from './icons/XIcon';
@@ -44,6 +44,44 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
     setEliminatedOptions([]);
     setShowSimplified(false);
   }, [currentQuestionIndex]);
+
+  // --- Invulvak schrijfvraag: focus-vangnetten -------------------------------
+  // Aanleiding (sept 2026, klasfeedback + filmpje): leerlingen klikten in het
+  // donkere vraagvak ("Typ het woord dat past bij…"), typten daarna met de focus
+  // op <body> en zagen niets verschijnen. Drie vangnetten:
+  //   1. autofocus zodra een schrijfvraag verschijnt;
+  //   2. een gewone klik op de vraag of de kaart zet de focus in het vak;
+  //   3. typt de leerling een letter terwijl géén invoerveld focus heeft, dan
+  //      vangen we die op, zetten ze in het antwoord en focussen het vak.
+  const answerInputRef = useRef<HTMLInputElement>(null);
+  const focusAnswerInput = useCallback(() => {
+    const el = answerInputRef.current;
+    if (el && !el.disabled) el.focus();
+  }, []);
+
+  const isWritingQuestion = currentQuestion?.type === QuestionType.Writing;
+
+  useEffect(() => {
+    if (isWritingQuestion && !isAnswered) focusAnswerInput();
+  }, [currentQuestionIndex, isWritingQuestion, isAnswered, focusAnswerInput]);
+
+  useEffect(() => {
+    if (!isWritingQuestion || isAnswered) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1) return; // enkel afdrukbare tekens (geen Enter/Tab/pijltjes)
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'IFRAME' || active?.isContentEditable) return;
+      const el = answerInputRef.current;
+      if (!el || el.disabled) return;
+      e.preventDefault();
+      setTextAnswer(prev => prev + e.key);
+      el.focus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isWritingQuestion, isAnswered]);
 
   if (!questions || questions.length === 0 || !currentQuestion) {
     return (
@@ -215,7 +253,13 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
         </div>
       </div>
 
-      <div className="bg-black/20 p-6 rounded-xl mb-8 min-h-[120px] flex items-center justify-center flex-col transition-all duration-300">
+      <div
+        className="bg-black/20 p-6 rounded-xl mb-8 min-h-[120px] flex items-center justify-center flex-col transition-all duration-300"
+        onClick={() => {
+          // Gewone klik op de vraag (geen tekstselectie) bij een schrijfvraag → focus naar het invulvak
+          if (isWritingQuestion && !window.getSelection()?.toString()) focusAnswerInput();
+        }}
+      >
         {currentQuestion.type === QuestionType.Writing && <span className="text-sm text-tal-gold font-bold uppercase mb-2 tracking-wider">✍️ Schrijfvraag</span>}
 
         {showSimplified && simplifiedQuestions[currentQuestion.vraag] ? (
@@ -246,25 +290,37 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
 
       {/* Writing Question Layout */}
       {currentQuestion.type === QuestionType.Writing && (
-        <div className="space-y-6">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={textAnswer}
-              onChange={(e) => setTextAnswer(e.target.value)}
-              disabled={isAnswered}
-              placeholder="Typ het woord hier..."
-              aria-label="Typ je antwoord"
-              className="w-full p-4 rounded-xl bg-white/10 border border-white/30 text-white placeholder:text-slate-400 focus:ring-2 focus:ring-tal-purple outline-none text-lg"
-              onKeyDown={(e) => e.key === 'Enter' && handleTextAnswer()}
-            />
-            <button
-              onClick={handleTextAnswer}
-              disabled={isAnswered || !textAnswer.trim()}
-              className="px-6 py-2 bg-tal-purple text-white font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-tal-purple-dark transition"
-            >
-              Controleer
-            </button>
+        <div className="space-y-6" onClick={focusAnswerInput}>
+          <div>
+            <label htmlFor="quiz-answer-input" className="block text-xs font-bold uppercase tracking-wider text-tal-gold mb-2">
+              ✏️ Jouw antwoord
+            </label>
+            <div className="flex gap-2">
+              <input
+                ref={answerInputRef}
+                id="quiz-answer-input"
+                type="text"
+                value={textAnswer}
+                onChange={(e) => setTextAnswer(e.target.value)}
+                disabled={isAnswered}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="done"
+                placeholder="Typ het woord hier..."
+                aria-label="Typ je antwoord"
+                className="w-full p-4 rounded-xl bg-white text-slate-900 placeholder:text-slate-400 border-2 border-white/70 focus:border-tal-purple focus:ring-4 focus:ring-tal-purple/40 outline-none text-lg shadow-inner disabled:bg-white/60 disabled:text-slate-500"
+                onKeyDown={(e) => e.key === 'Enter' && handleTextAnswer()}
+              />
+              <button
+                onClick={handleTextAnswer}
+                disabled={isAnswered || !textAnswer.trim()}
+                className="px-6 py-2 bg-tal-purple text-white font-bold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-tal-purple-dark transition"
+              >
+                Controleer
+              </button>
+            </div>
           </div>
 
           {/* Word Bank Hint */}
