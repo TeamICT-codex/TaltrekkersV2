@@ -9,6 +9,13 @@ interface GeminiProxyRequest {
   model: string;
   contents: string | unknown[];
   config?: Record<string, unknown>;
+  /**
+   * Kort label van de app-functie die deze call doet ('quiz', 'frayer', 'tts', ...).
+   * Wordt meegestuurd naar de proxy en daar gelogd in ai_usage_log, zodat de
+   * beheerder ziet welke functie hoeveel AI-verbruik veroorzaakt. Verplicht,
+   * zodat een nieuwe call-site niet per ongeluk als 'onbekend' eindigt.
+   */
+  feature: string;
 }
 
 interface GeminiProxyResponse {
@@ -21,17 +28,20 @@ interface GeminiProxyResponse {
  * Productie: roept de server-side proxy aan (/api/gemini) zodat de API key
  * nooit in de browser terechtkomt.
  *
- * Lokale development én lokale `vite preview`: gebruikt de @google/genai SDK
- * direct met VITE_GEMINI_API_KEY. We checken zowel `import.meta.env.DEV` (dev
- * server) als de hostname (preview-build op localhost) zodat we ook lokaal de
- * productie-build kunnen testen zonder de serverless `/api/gemini` te hoeven
- * emuleren. Op een ge-deployde productie-URL (vercel.app/eigen domein) is
- * hostname niet "localhost" → proxy wordt gebruikt, key blijft server-side.
+ * Lokale development (`npm run dev`): gebruikt de @google/genai SDK direct met
+ * VITE_GEMINI_API_KEY uit .env.local.
+ *
+ * BELANGRIJK — waarom dit ENKEL op `import.meta.env.DEV` hangt en niet (meer)
+ * op de hostname: Vite vervangt `import.meta.env.VITE_GEMINI_API_KEY` bij het
+ * bouwen door de letterlijke waarde. Alleen wanneer de voorwaarde een
+ * compile-time constante is (`import.meta.env.DEV` → `false` in een
+ * productie-build) gooit Rollup de hele directe SDK-tak weg, mét de key. Met
+ * een runtime-hostname-check bleef die tak (en dus de key) in de publieke
+ * bundle staan — dat is op 2026-09-07 effectief in productie vastgesteld.
+ * Gevolg: `vite preview` op localhost gebruikt nu ook de proxy (die daar niet
+ * draait) — test AI-functies lokaal dus via `npm run dev`.
  */
-const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
-const IS_LOCAL_HOST =
-  typeof window !== 'undefined' && LOCAL_HOSTNAMES.has(window.location.hostname);
-const IS_DEV = import.meta.env.DEV || IS_LOCAL_HOST;
+const IS_DEV = import.meta.env.DEV;
 
 async function callGeminiViaProxy(params: GeminiProxyRequest): Promise<GeminiProxyResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -140,6 +150,7 @@ async function generateTTSBuffer(text: string): Promise<AudioBuffer> {
   const ctx = getOrCreateAudioContext();
 
   const result = await callGemini({
+    feature: 'tts',
     model: 'gemini-2.5-flash-preview-tts',
     contents: [{ parts: [{ text: `Spreek het volgende uit in standaard Belgisch Nederlands (Vlaams, geen dialect): "${text}"` }] }],
     config: {
@@ -214,6 +225,7 @@ export const playTextAsSpeech = async (text: string): Promise<void> => {
 
   try {
     const result = await callGemini({
+      feature: 'tts',
       model: 'gemini-2.5-flash-preview-tts',
       contents: [{ parts: [{ text }] }],
       config: {
@@ -498,6 +510,7 @@ export const generateFrayerModel = async (word: string, settings: GenerationSett
   for (let i = 0; i < MAX_FRAYER_RETRIES; i++) {
     try {
       const result = await callGemini({
+        feature: 'frayer',
         model,
         contents: `Genereer een Frayer Model voor het Nederlandse woord "${word}". De doelgroep zijn NT2-leerders. ${difficultyInstruction} ${contextInstruction} Geef de definitie, 3 synoniemen, 3 antoniemen, en 3 voorbeeldobjecten. Elk voorbeeldobject moet een 'zin' bevatten (een complete, informatieve zin waarin het woord wordt gebruikt) en een 'gebruiktWoord' (de exacte, vervoegde of verbogen vorm van "${word}" die in die zin voorkomt). BELANGRIJKE REGEL: Als "${word}" een scheidbaar werkwoord is (bv. 'opbellen') en het in de zin gesplitst wordt gebruikt (bv. 'ik bel mijn oma op'), moet 'gebruiktWoord' BEIDE delen bevatten, gescheiden door een spatie (bv. 'bel op'). Dit is cruciaal voor de highlighting.`,
         config: {
@@ -536,6 +549,7 @@ export const translateFrayerModel = async (model: FrayerModelData, language: str
   try {
     const { model: aiModelName, config: aiCallConfig } = getAiConfig(settings.aiModel);
     const result = await callGemini({
+      feature: 'vertaling',
       model: aiModelName,
       contents: `Vertaal de waarden van dit JSON-object naar de taal "${language}". Behoud de JSON-structuur en de sleutelnamen. Vertaal de waarden voor 'definitie', 'synoniemen', 'antoniemen'. Vertaal voor elk object in de 'voorbeelden' array alleen de waarde van de 'zin' sleutel. Vertaal de waarde van 'gebruiktWoord' NIET. JSON: ${JSON.stringify(model)}`,
       config: {
@@ -588,6 +602,7 @@ Genereer een vraag voor elk van de volgende woorden: ${words.join(', ')}.`;
   for (let i = 0; i < MAX_QUIZ_RETRIES; i++) {
     try {
       const result = await callGemini({
+        feature: 'quiz',
         model,
         contents: prompt,
         config: {
@@ -677,6 +692,7 @@ export const generateFeedbackForError = async (
   try {
     const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
     const result = await callGemini({
+      feature: 'feedback',
       model,
       contents: `${PROMPT_INJECTION_NOTICE}
 
@@ -697,6 +713,7 @@ export const simplifyQuestion = async (question: string, settings: Pick<Practice
   try {
     const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
     const result = await callGemini({
+      feature: 'vereenvoudig',
       model,
       contents: `${PROMPT_INJECTION_NOTICE}\n\nHerschrijf de vraag hieronder in eenvoudige 'Jip en Janneke' taal (A2 niveau) voor iemand die Nederlands leert. Behoud de exacte betekenis en de kernvraag. Geef alleen de nieuwe vraag terug, niets anders.\n\n${wrapUserContent(question, 'QUESTION')}`,
       config: { ...aiCallConfig },
@@ -715,6 +732,7 @@ export const generateStory = async (words: string[], theme: string, settings: Pi
     const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
 
     const result = await callGemini({
+      feature: 'verhaal',
       model,
       contents: `Je bent een AI-assistent voor een leraar Nederlands, gespecialiseerd in NT2-leerlingen (14-15 jaar). Schrijf een verhaal over "${theme}".
 - **Woorden:** ${words.join(', ')}
@@ -753,6 +771,7 @@ export const generateFunnyTheme = async (words: string[], settings: GenerationSe
     }
 
     const result = await callGemini({
+      feature: 'verhaal-thema',
       model,
       contents: prompt,
       config: { ...aiCallConfig },
@@ -770,6 +789,7 @@ export const evaluateComprehension = async (story: string, summary: string, sett
   try {
     const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
     const result = await callGemini({
+      feature: 'verhaal-evaluatie',
       model,
       config: { ...aiCallConfig, systemInstruction: `Je bent een behulpzame leraar. Begin positief. Gebruik headers: ### Oordeel, ### Analyse, ### Concrete tips. ${PROMPT_INJECTION_NOTICE}` },
       contents: `Evalueer de samenvatting van de student.\n\n${wrapUserContent(story, 'STORY')}\n${wrapUserContent(summary, 'SUMMARY')}`,
@@ -784,6 +804,7 @@ export const evaluateReadingAnswer = async (story: string, question: string, ans
   try {
     const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
     const result = await callGemini({
+      feature: 'lees-evaluatie',
       model,
       config: { ...aiCallConfig, systemInstruction: `Je bent een behulpzame leraar. Begin positief. Gebruik headers: ### Oordeel, ### Analyse, ### Concrete tips. ${PROMPT_INJECTION_NOTICE}` },
       contents: `Evalueer het antwoord.\n\n${wrapUserContent(story, 'STORY')}\n${wrapUserContent(question, 'QUESTION')}\n${wrapUserContent(answer, 'ANSWER')}`,
@@ -799,6 +820,7 @@ export const generateDidacticAnalysis = async (session: SessionRecord, studentNa
   const { model, config: aiCallConfig } = getAiConfig(session.settings.aiModel || 'fast');
   const prompt = `Analyseer de resultaten van leerling ${studentName}. Gebruik headers: ### Samenvatting, ### Analyse van leertempo en tijd, ### Inzichten in leergedrag, ### Concrete tips voor de leerkracht.\nData: ${JSON.stringify(session.quizResults)}`;
   const result = await callGemini({
+    feature: 'didactische-analyse',
     model,
     contents: prompt,
     config: { ...aiCallConfig },
@@ -816,6 +838,7 @@ export const extractKeyTerms = async (text: string, settings: GenerationSettings
     const subjectGuidance = buildSubjectGuidance(settings.context);
 
     const result = await callGemini({
+      feature: 'woordextractie',
       model,
       contents: `${PROMPT_INJECTION_NOTICE}\n\nAnalyseer de tekst hieronder en extraheer de belangrijkste schooltaalwoorden of vakspecifieke termen (maximaal 100). Vermijd alledaagse woorden.${subjectGuidance}\n\nGeef alleen de lijst terug.\n\n${wrapUserContent(truncatedText, 'TEXT')}`,
       config: {

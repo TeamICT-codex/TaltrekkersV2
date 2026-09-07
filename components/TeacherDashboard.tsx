@@ -4,6 +4,7 @@ import { supabase } from '../services/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { format, isToday, isThisWeek, differenceInDays } from 'date-fns';
 import { nl } from 'date-fns/locale';
+import AiUsagePanel from './AiUsagePanel';
 
 interface RegisteredStudent {
     id: string;
@@ -115,6 +116,9 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     });
     const [jaargangFilter, setJaargangFilter] = useState<string>('all');
     const [klasFilter, setKlasFilter] = useState<string>('all');
+    // AI-verbruik (admin-only): standaard dicht, zodat de query pas draait
+    // wanneer de beheerder het paneel effectief opendoet.
+    const [showAiUsage, setShowAiUsage] = useState(false);
 
     // Leerlingen beheer state
     const [roster, setRoster] = useState<RegisteredStudent[]>([]);
@@ -1142,6 +1146,24 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         <div className="py-12">
                             {emptyStateContent}
                         </div>
+                    )}
+                </div>
+            )}
+
+            {/* AI-VERBRUIK — enkel voor admins. Achter een knop zodat het paneel
+                (en zijn query naar ai_usage_log) pas laadt wanneer je het opent. */}
+            {role === 'admin' && (
+                <div className="mt-8">
+                    {showAiUsage ? (
+                        <AiUsagePanel />
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setShowAiUsage(true)}
+                            className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition text-sm"
+                        >
+                            🧾 AI-verbruik tonen
+                        </button>
                     )}
                 </div>
             )}
