@@ -168,10 +168,12 @@ const AiUsagePanel: React.FC = () => {
                 </div>
 
                 <p className="mt-3 text-xs text-muted leading-relaxed">
-                    Bedragen zijn een schatting in US-dollar, berekend uit de gelogde tokens maal het tarief van
-                    Gemini 2.5 Flash ($0.30 per 1M input, $2.50 per 1M output; TTS $0.50 / $10.00). De factuur van
-                    Google is de enige echte waarheid. Er wordt gekeken naar de laatste 90 dagen (max. 20.000 rijen);
-                    mislukte calls hebben geen gekende tokens en kosten hier dus $0.
+                    Bedragen zijn een schatting in US-dollar, berekend uit de gelogde tokens maal het tarief per
+                    model: Gemini 3.8 Flash $0.75 per 1M input en $3.75 per 1M output (introductieprijs t.e.m.
+                    31 december 2026, daarna het dubbele), spraak $0.50 en $10.00. Denk-tokens rekent Google als
+                    output, dus die tellen mee. De factuur van Google is de enige echte waarheid. Er wordt gekeken
+                    naar de laatste 90 dagen (max. 20.000 rijen); mislukte calls hebben geen gekende tokens en
+                    kosten hier dus $0.
                 </p>
             </>
         );

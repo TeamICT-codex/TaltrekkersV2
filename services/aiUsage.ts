@@ -113,17 +113,36 @@ export async function fetchAiUsageRows(
 }
 
 /**
- * Tarieven van Google, in US-dollar per 1 miljoen tokens (stand 2026-09).
+ * Tarieven van Google, in US-dollar per 1 miljoen tokens.
+ * Gecontroleerd op ai.google.dev/gemini-api/docs/pricing op 2026-09-08.
  * Enkel een schatting: de factuur van Google blijft de echte waarheid.
+ *
+ * LET OP — twee dingen om in het oog te houden:
+ *  1. De app vraagt `gemini-flash-latest`, een rollende alias. Google verlegde
+ *     die op 2026-09-02 naar gemini-3.8-flash, dat 2,5x duurder is qua input
+ *     dan het oude 2.5 Flash. Daarom loggen we de ECHT gebruikte modelversie
+ *     (zie geminiService.ts) en niet de aliasnaam.
+ *  2. De introductieprijs van 3.8 Flash ($0.75/$3.75) loopt tot en met
+ *     2026-12-31. Vanaf 2027-01-01 wordt dat $1.50/$7.50 — dan moeten deze
+ *     cijfers hier verdubbeld worden.
  */
 export const PRICING_USD_PER_1M: Record<string, { input: number; output: number }> = {
-    'gemini-flash-latest': { input: 0.30, output: 2.50 },
+    // Nieuwste Flash — introductieprijs t.e.m. 2026-12-31, daarna 1.50 / 7.50
+    'gemini-3.8-flash': { input: 0.75, output: 3.75 },
+    'gemini-3.7-flash': { input: 0.75, output: 3.75 },
+    // Alias-fallback voor het geval de modelversie niet meegegeven werd
+    'gemini-flash-latest': { input: 0.75, output: 3.75 },
+    // Vorige generatie, nog gelogd in oudere rijen
     'gemini-2.5-flash': { input: 0.30, output: 2.50 },
+    // Spraak: output zijn audio-tokens (~25 per seconde geluid) — veruit het duurst
     'gemini-2.5-flash-preview-tts': { input: 0.50, output: 10.00 },
 };
 
-/** Fallback voor een model dat we (nog) niet kennen: gewoon het Flash-tarief. */
-const DEFAULT_PRICING = PRICING_USD_PER_1M['gemini-flash-latest'];
+/**
+ * Fallback voor een model dat we (nog) niet kennen. Bewust het tarief van het
+ * nieuwste Flash-model: liever iets te hoog schatten dan de kosten verbergen.
+ */
+const DEFAULT_PRICING = PRICING_USD_PER_1M['gemini-3.8-flash'];
 
 /**
  * Geschatte kost van één call in US-dollar.

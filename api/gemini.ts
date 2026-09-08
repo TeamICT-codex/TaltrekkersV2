@@ -147,12 +147,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const response = await ai.models.generateContent({ model, contents, config });
     const usage = toUsagePayload(response.usageMetadata);
 
+    // Welk model Google ECHT gebruikte. `gemini-flash-latest` is een rollende
+    // alias: Google verlegt die naar het nieuwste Flash-model, en dat kan een
+    // ander tarief hebben (op 2026-09-02 verschoof ze naar gemini-3.8-flash).
+    // Door de opgeloste versie te loggen blijft de kostenraming ook daarna kloppen.
+    const modelVersion = (response as { modelVersion?: string }).modelVersion ?? null;
+
     const audioPart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
     if (audioPart?.data) {
-      return res.status(200).json({ audioData: audioPart.data, usage });
+      return res.status(200).json({ audioData: audioPart.data, usage, modelVersion });
     }
 
-    return res.status(200).json({ text: response.text ?? '', usage });
+    return res.status(200).json({ text: response.text ?? '', usage, modelVersion });
 
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

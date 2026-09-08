@@ -25,6 +25,8 @@ interface GeminiProxyResponse {
   error?: string;
   /** Tokenverbruik van deze call — door de proxy of de SDK meegegeven. */
   usage?: AiUsageMetadata | null;
+  /** Het model dat Google écht gebruikte (de alias kan verschuiven). */
+  modelVersion?: string | null;
 }
 
 /**
@@ -89,13 +91,14 @@ async function callGeminiDirect(params: GeminiProxyRequest): Promise<GeminiProxy
   });
 
   const usage = response.usageMetadata ?? null;
+  const modelVersion = (response as { modelVersion?: string }).modelVersion ?? null;
 
   const audioPart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
   if (audioPart?.data) {
-    return { audioData: audioPart.data, usage };
+    return { audioData: audioPart.data, usage, modelVersion };
   }
 
-  return { text: response.text ?? '', usage };
+  return { text: response.text ?? '', usage, modelVersion };
 }
 
 /**
@@ -115,8 +118,10 @@ async function callGemini(params: GeminiProxyRequest): Promise<GeminiProxyRespon
   try {
     const result = IS_DEV ? await callGeminiDirect(params) : await callGeminiViaProxy(params);
     void logAiUsage({
+      // Het opgeloste model, niet de alias: zo klopt de kostenraming ook nadat
+      // Google `gemini-flash-latest` naar een nieuwer (duurder) model verlegt.
       feature: params.feature,
-      model: params.model,
+      model: result.modelVersion || params.model,
       usage: result.usage,
       success: true,
       durationMs: Date.now() - startedAt,
