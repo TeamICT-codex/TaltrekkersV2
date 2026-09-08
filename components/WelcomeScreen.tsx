@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { useAuth, isEmailDomainAllowed, formatAllowedDomains } from '../contexts/AuthContext';
+import PublicStatsButton from './PublicStatsButton';
 
 // Microsoft-logo als inline SVG — 4-square grid, officiële kleuren
 const MicrosoftLogo: React.FC<{ size?: number }> = ({ size = 20 }) => (
@@ -179,6 +180,11 @@ const WelcomeScreen: React.FC = () => {
                         {error || authError}
                     </p>
                 )}
+
+                {/* ── Publieke teller: ook zichtbaar vóór het inloggen ── */}
+                <div className="pt-2 flex justify-center">
+                    <PublicStatsButton />
+                </div>
             </div>
         </div>
     );

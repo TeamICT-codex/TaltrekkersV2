@@ -14,6 +14,7 @@ import Spinner from './components/Spinner';
 import AvatarSelectorModal, { getAvatarById } from './components/AvatarSelectorModal';
 import WelcomeBonusToast from './components/WelcomeBonusToast';
 import TokenEarnedCelebration from './components/TokenEarnedCelebration';
+import PublicStatsButton from './components/PublicStatsButton';
 
 // Zware/secundaire componenten lazy laden — worden pas gedownload wanneer nodig.
 // Welcome blijft eager omdat het de hoofdroute is en lazy daar de FCP vertraagt.
@@ -439,6 +440,9 @@ const App: React.FC = () => {
         </Suspense>
       </main>
       <footer className="text-center text-xs text-muted p-4">
+        <div className="mb-2">
+          <PublicStatsButton variant="link" />
+        </div>
         Deze webapplicatie gebruikt AI. Technologie is niet onfeilbaar en maakt, net als mensen, af en toe fouten. Zie eventuele foutjes als een leerkans! :D
       </footer>
     </div>
