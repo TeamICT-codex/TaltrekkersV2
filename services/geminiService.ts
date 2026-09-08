@@ -1,6 +1,7 @@
 
 import { FrayerModelData, StoryData, WordLevel, PracticeSettings, QuizQuestion, SessionRecord, QuestionType } from '../types';
 import { supabase } from './supabase';
+import { logAiUsage, type AiUsageMetadata } from './aiUsage';
 import { getVakDomainMap } from '../data/curriculumVakken';
 
 // --- PROXY / SDK HELPER ---
@@ -11,9 +12,9 @@ interface GeminiProxyRequest {
   config?: Record<string, unknown>;
   /**
    * Kort label van de app-functie die deze call doet ('quiz', 'frayer', 'tts', ...).
-   * Wordt meegestuurd naar de proxy en daar gelogd in ai_usage_log, zodat de
-   * beheerder ziet welke functie hoeveel AI-verbruik veroorzaakt. Verplicht,
-   * zodat een nieuwe call-site niet per ongeluk als 'onbekend' eindigt.
+   * Wordt gebruikt om de call te loggen in ai_usage_log, zodat de beheerder
+   * ziet welke functie hoeveel AI-verbruik veroorzaakt. Verplicht, zodat een
+   * nieuwe call-site niet per ongeluk als 'onbekend' eindigt.
    */
   feature: string;
 }
@@ -22,6 +23,8 @@ interface GeminiProxyResponse {
   text?: string;
   audioData?: string;
   error?: string;
+  /** Tokenverbruik van deze call — door de proxy of de SDK meegegeven. */
+  usage?: AiUsageMetadata | null;
 }
 
 /**
@@ -85,19 +88,50 @@ async function callGeminiDirect(params: GeminiProxyRequest): Promise<GeminiProxy
     config: params.config,
   });
 
+  const usage = response.usageMetadata ?? null;
+
   const audioPart = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
   if (audioPart?.data) {
-    return { audioData: audioPart.data };
+    return { audioData: audioPart.data, usage };
   }
 
-  return { text: response.text ?? '' };
+  return { text: response.text ?? '', usage };
 }
 
+/**
+ * Eén doorgang voor élke Gemini-call, inclusief het loggen van het verbruik.
+ *
+ * Het wegschrijven gebeurt bewust HIER in de browser en niet in de proxy: die
+ * had daarvoor de server-variabelen SUPABASE_URL en SUPABASE_ANON_KEY nodig, en
+ * als daar één van ontbreekt werd er stilzwijgend niets gelogd (vastgesteld op
+ * 2026-09-08: leerlingen oefenden volop, het paneel bleef leeg). De browser
+ * heeft altijd een ingelogde Supabase-sessie en voldoet dus altijd aan de
+ * RLS-regel `auth.uid() = user_id`.
+ *
+ * Loggen is fire-and-forget: het mag de leerling nooit vertragen of breken.
+ */
 async function callGemini(params: GeminiProxyRequest): Promise<GeminiProxyResponse> {
-  if (IS_DEV) {
-    return callGeminiDirect(params);
+  const startedAt = Date.now();
+  try {
+    const result = IS_DEV ? await callGeminiDirect(params) : await callGeminiViaProxy(params);
+    void logAiUsage({
+      feature: params.feature,
+      model: params.model,
+      usage: result.usage,
+      success: true,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  } catch (error: unknown) {
+    void logAiUsage({
+      feature: params.feature,
+      model: params.model,
+      success: false,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
   }
-  return callGeminiViaProxy(params);
 }
 
 // --- AUDIO HANDLING ---

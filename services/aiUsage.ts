@@ -9,6 +9,56 @@ import { supabase } from './supabase';
  * prompts, geen antwoorden, geen namen. Zie migration-2026-09-07-ai-usage-log.sql.
  */
 
+/** Tokenverbruik zoals Gemini het teruggeeft (velden kunnen ontbreken). */
+export interface AiUsageMetadata {
+    promptTokenCount?: number | null;
+    candidatesTokenCount?: number | null;
+    thoughtsTokenCount?: number | null;
+    totalTokenCount?: number | null;
+}
+
+/**
+ * Schrijft één metadata-rij weg in `ai_usage_log`: welke functie, welk model,
+ * hoeveel tokens, gelukt of niet, hoe lang. NOOIT prompts of antwoorden.
+ *
+ * Wordt aangeroepen vanuit services/geminiService.ts na elke Gemini-call.
+ * Gooit nooit en geeft niets terug: loggen mag een oefening van een leerling
+ * nooit vertragen of doen mislukken. Zonder ingelogde sessie slaan we over,
+ * want de RLS-regel `auth.uid() = user_id` zou de rij toch weigeren.
+ */
+export async function logAiUsage(entry: {
+    feature: string;
+    model: string;
+    usage?: AiUsageMetadata | null;
+    success: boolean;
+    errorMessage?: string | null;
+    durationMs: number;
+}): Promise<void> {
+    try {
+        const { data } = await supabase.auth.getSession();
+        const userId = data.session?.user?.id;
+        if (!userId) return;
+
+        const { error } = await supabase.from('ai_usage_log').insert({
+            user_id: userId,
+            feature: entry.feature,
+            model: entry.model,
+            input_tokens: entry.usage?.promptTokenCount ?? null,
+            output_tokens: entry.usage?.candidatesTokenCount ?? null,
+            thought_tokens: entry.usage?.thoughtsTokenCount ?? null,
+            total_tokens: entry.usage?.totalTokenCount ?? null,
+            success: entry.success,
+            status_code: entry.success ? 200 : null,
+            error_message: entry.errorMessage ? entry.errorMessage.slice(0, 200) : null,
+            duration_ms: Math.round(entry.durationMs),
+        });
+
+        if (error) console.warn('AI-verbruik loggen mislukt:', error.message);
+    } catch (err: unknown) {
+        console.warn('AI-verbruik loggen mislukt:', err instanceof Error ? err.message : err);
+    }
+}
+
 /** Eén gelogde AI-call, zoals het paneel ze nodig heeft. */
 export interface AiUsageRow {
     created_at: string;
