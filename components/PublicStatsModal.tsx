@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Spinner from './Spinner';
 import {
     fetchPublicStats,
@@ -81,7 +82,12 @@ const PublicStatsModal: React.FC<PublicStatsModalProps> = ({ isOpen, onClose }) 
     const percentage = stats ? correctPercentage(stats) : 0;
     const wrong = stats ? questionsWrong(stats) : 0;
 
-    return (
+    // Via een portal op <body>, niet in de eigen boom: de knop staat in
+    // containers met een (afgewerkte) fade-in-transform, en een transform maakt
+    // van een ouder het referentiekader voor `position: fixed`. Zonder portal
+    // zou de overlay enkel dat blok bedekken en zou de sticky header (z-40)
+    // erbovenop blijven staan.
+    return createPortal(
         <div
             className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
             onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
@@ -178,7 +184,8 @@ const PublicStatsModal: React.FC<PublicStatsModalProps> = ({ isOpen, onClose }) 
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
