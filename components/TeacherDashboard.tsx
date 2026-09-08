@@ -534,13 +534,36 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                     <h1 className="text-3xl font-bold text-tal-purple-dark">👨‍🏫 Leerkracht Dashboard</h1>
                     <p className="text-slate-600">Volg de vooruitgang van je leerlingen in realtime.</p>
                 </div>
-                <button
-                    onClick={onBack}
-                    className="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium transition"
-                >
-                    Terug naar App
-                </button>
+                <div className="flex items-center gap-2">
+                    {/* AI-VERBRUIK — enkel voor admins. Bovenaan, zodat de knop niet
+                        onder alle leerling-lijsten verdwijnt. Het paneel (en zijn query
+                        naar ai_usage_log) laadt pas wanneer je het opent. */}
+                    {role === 'admin' && (
+                        <button
+                            type="button"
+                            onClick={() => setShowAiUsage(v => !v)}
+                            aria-expanded={showAiUsage}
+                            className={`px-4 py-2 rounded-full font-semibold text-sm transition shadow-sm ${showAiUsage
+                                ? 'bg-tal-purple text-white hover:bg-tal-purple-dark'
+                                : 'bg-tal-purple/10 text-tal-purple-dark border border-tal-purple/30 hover:bg-tal-purple/20'}`}
+                        >
+                            🧾 AI-verbruik
+                        </button>
+                    )}
+                    <button
+                        onClick={onBack}
+                        className="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium transition"
+                    >
+                        Terug naar App
+                    </button>
+                </div>
             </div>
+
+            {role === 'admin' && showAiUsage && (
+                <div className="mb-6 animate-fade-in">
+                    <AiUsagePanel />
+                </div>
+            )}
 
             {/* Snelstart — compacte, inklapbare uitleg voor leerkrachten */}
             <div className="bg-tal-purple/5 border border-tal-purple/20 rounded-xl mb-6 overflow-hidden">
@@ -1146,24 +1169,6 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                         <div className="py-12">
                             {emptyStateContent}
                         </div>
-                    )}
-                </div>
-            )}
-
-            {/* AI-VERBRUIK — enkel voor admins. Achter een knop zodat het paneel
-                (en zijn query naar ai_usage_log) pas laadt wanneer je het opent. */}
-            {role === 'admin' && (
-                <div className="mt-8">
-                    {showAiUsage ? (
-                        <AiUsagePanel />
-                    ) : (
-                        <button
-                            type="button"
-                            onClick={() => setShowAiUsage(true)}
-                            className="px-4 py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium transition text-sm"
-                        >
-                            🧾 AI-verbruik tonen
-                        </button>
                     )}
                 </div>
             )}
