@@ -104,7 +104,7 @@ const WelcomeScreen: React.FC = () => {
         <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 animate-fade-in">
             <div className="text-center mb-8">
                 <h1 className="text-4xl md:text-5xl font-bold text-tal-purple-dark mb-4">
-                    Welkom bij TALent voor Taal! 🎯
+                    Welkom bij TALent voor Taal! <PublicStatsButton emoji="🎯" />
                 </h1>
                 <p className="text-lg text-slate-600 max-w-md mx-auto">
                     Log in met je schoolaccount om je woordenschat te trainen.
@@ -180,11 +180,6 @@ const WelcomeScreen: React.FC = () => {
                         {error || authError}
                     </p>
                 )}
-
-                {/* ── Publieke teller: ook zichtbaar vóór het inloggen ── */}
-                <div className="pt-2 flex justify-center">
-                    <PublicStatsButton />
-                </div>
             </div>
         </div>
     );

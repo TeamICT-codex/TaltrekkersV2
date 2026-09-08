@@ -3,6 +3,7 @@ import { PracticeSettings, AllUsersData } from '../types';
 import { STORY_MODE_UNLOCK_THRESHOLD } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import PracticeSetup from './PracticeSetup';
+import PublicStatsButton from './PublicStatsButton';
 import { getAvatarById } from './AvatarSelectorModal';
 
 interface WelcomeProps {
@@ -108,7 +109,9 @@ const Welcome: React.FC<WelcomeProps> = ({ onStartPractice, onShowDashboard, all
                 <div className="space-y-4">
                     <div>
                         <h2 className="text-2xl md:text-3xl font-bold">
-                            {firstName ? `Welkom, ${firstName}! 👋` : 'Welkom bij TALent voor Taal! 🪄'}
+                            {firstName
+                                ? <>Welkom, {firstName}! <PublicStatsButton emoji="👋" /></>
+                                : <>Welkom bij TALent voor Taal! <PublicStatsButton emoji="🪄" /></>}
                         </h2>
                         <p className="text-slate-200 text-sm mt-1">
                             Klaar om je woordenschat te verrijken? Kies een lijst rechts en start je oefening.
