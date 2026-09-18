@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { fetchAiUsageRows, aggregateUsage, type AiUsageRow, type UsageBucket } from '../services/aiUsage';
+import { fetchAiUsageStats, buildUsageView, type AiUsageStats, type UsageBucket } from '../services/aiUsage';
 
 /**
  * AI-verbruik-paneel (admin-only).
@@ -29,15 +29,15 @@ const fmtUsd = (n: number): string => {
 };
 
 const AiUsagePanel: React.FC = () => {
-    const [rows, setRows] = useState<AiUsageRow[]>([]);
+    const [stats, setStats] = useState<AiUsageStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [missingTable, setMissingTable] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
-        const result = await fetchAiUsageRows();
-        setRows(result.rows);
+        const result = await fetchAiUsageStats();
+        setStats(result.stats);
         setError(result.error);
         setMissingTable(result.missingTable);
         setLoading(false);
@@ -45,7 +45,7 @@ const AiUsagePanel: React.FC = () => {
 
     useEffect(() => { void load(); }, [load]);
 
-    const { periods, perFeature, total, anonymousCalls } = useMemo(() => aggregateUsage(rows), [rows]);
+    const view = useMemo(() => (stats ? buildUsageView(stats) : null), [stats]);
 
     const renderBody = () => {
         if (loading) {
@@ -60,8 +60,11 @@ const AiUsagePanel: React.FC = () => {
         if (missingTable) {
             return (
                 <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-4 text-sm">
-                    📋 Nog geen logboek. Voer <code className="font-mono text-xs bg-amber-100 px-1 py-0.5 rounded">migration-2026-09-07-ai-usage-log.sql</code> uit
-                    in de Supabase SQL-editor, daarna verschijnen de cijfers hier.
+                    📋 De teller is nog niet volledig geactiveerd. Voer{' '}
+                    <code className="font-mono text-xs bg-amber-100 px-1 py-0.5 rounded">migration-2026-09-18-ai-usage-stats.sql</code>{' '}
+                    uit in de Supabase SQL-editor (en, als dat nog niet gebeurd is,{' '}
+                    <code className="font-mono text-xs bg-amber-100 px-1 py-0.5 rounded">migration-2026-09-07-ai-usage-log.sql</code>).
+                    Daarna verschijnen de cijfers hier.
                 </div>
             );
         }
@@ -74,13 +77,15 @@ const AiUsagePanel: React.FC = () => {
             );
         }
 
-        if (rows.length === 0) {
+        if (!view || stats === null || stats.total_rows === 0) {
             return (
                 <div className="py-10 text-center text-muted text-sm">
                     Nog geen AI-calls gelogd. Zodra leerlingen oefenen op de live app vullen deze cijfers zich.
                 </div>
             );
         }
+
+        const { periods, perFeature, total, anonymousCalls } = view;
 
         return (
             <>

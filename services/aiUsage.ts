@@ -59,56 +59,111 @@ export async function logAiUsage(entry: {
     }
 }
 
-/** Eén gelogde AI-call, zoals het paneel ze nodig heeft. */
-export interface AiUsageRow {
-    created_at: string;
-    /** NULL = call zonder ingelogde gebruiker (of profiel intussen verwijderd). */
-    user_id: string | null;
-    feature: string;
+/**
+ * Eén opgetelde groep uit de database: per periode + model, of per functie + model.
+ * De prijsberekening gebeurt hier in de app (zie PRICING_USD_PER_1M), niet in SQL,
+ * zodat de tarieven maar op één plaats onderhouden moeten worden.
+ */
+export interface UsageGroup {
+    periode?: string;
+    feature?: string;
     model: string;
-    input_tokens: number | null;
-    output_tokens: number | null;
-    thought_tokens: number | null;
-    success: boolean;
+    calls: number;
+    input_tokens: number;
+    /** Output + denk-tokens samen (zo factureert Google het ook). */
+    output_tokens: number;
+    failed: number;
+}
+
+/** Alles wat get_ai_usage_stats() teruggeeft. */
+export interface AiUsageStats {
+    days: number;
+    total_rows: number;
+    anonymous_calls: number;
+    first_logged_at: string | null;
+    periods: UsageGroup[];
+    features: UsageGroup[];
+}
+
+/** Volgorde + Nederlandse naam van de vier periode-kaarten. */
+const PERIOD_LABELS: { key: string; label: string }[] = [
+    { key: 'vandaag', label: 'Vandaag' },
+    { key: 'week', label: 'Deze week' },
+    { key: 'maand', label: 'Deze maand' },
+    { key: 'alles', label: 'Alles' },
+];
+
+function toGroup(raw: Record<string, unknown>): UsageGroup {
+    const num = (v: unknown) => {
+        const n = Number(v ?? 0);
+        return Number.isFinite(n) ? n : 0;
+    };
+    return {
+        periode: typeof raw.periode === 'string' ? raw.periode : undefined,
+        feature: typeof raw.feature === 'string' ? raw.feature : undefined,
+        model: typeof raw.model === 'string' ? raw.model : 'onbekend',
+        calls: num(raw.calls),
+        input_tokens: num(raw.input_tokens),
+        output_tokens: num(raw.output_tokens),
+        failed: num(raw.failed),
+    };
 }
 
 /**
- * Haalt de recente logregels op. Gooit nooit: fouten komen terug als tekst,
- * en een ontbrekende tabel (migratie nog niet gedraaid) krijgt een eigen vlag
- * zodat het paneel daar een vriendelijke uitleg voor kan tonen.
+ * Haalt de opgetelde cijfers op via de RPC `get_ai_usage_stats`.
+ *
+ * Bewust NIET meer alle logregels ophalen en in de browser optellen: Supabase
+ * levert maximaal ~1.000 rijen per opvraging, waardoor het paneel op
+ * 2026-09-18 slechts 1.000 van de 10.747 regels zag en de kosten ongeveer tien
+ * keer te laag toonde. Eén JSON-object is nooit afgekapt.
+ *
+ * Gooit nooit: fouten komen terug als tekst, en een ontbrekende functie
+ * (migratie nog niet gedraaid) krijgt een eigen vlag.
  */
-export async function fetchAiUsageRows(
-    days = 90,
-    limit = 20000
-): Promise<{ rows: AiUsageRow[]; error: string | null; missingTable: boolean }> {
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-
+export async function fetchAiUsageStats(
+    days = 90
+): Promise<{ stats: AiUsageStats | null; error: string | null; missingTable: boolean }> {
     try {
-        const { data, error } = await supabase
-            .from('ai_usage_log')
-            .select('created_at, user_id, feature, model, input_tokens, output_tokens, thought_tokens, success')
-            .gte('created_at', since)
-            .order('created_at', { ascending: false })
-            .limit(limit);
+        const { data, error } = await supabase.rpc('get_ai_usage_stats', { p_days: days });
 
         if (error) {
-            // PGRST205 = PostgREST kent de tabel niet, 42P01 = Postgres "relation
-            // does not exist". Beide betekenen: migratie nog niet uitgevoerd.
+            // PGRST202 = functie onbekend, PGRST205 / 42P01 = tabel onbekend.
+            // Alle drie betekenen: migratie nog niet uitgevoerd.
             const code = (error as { code?: string }).code ?? '';
             const message = error.message ?? '';
             const missingTable =
+                code === 'PGRST202' ||
                 code === 'PGRST205' ||
                 code === '42P01' ||
                 /does not exist/i.test(message) ||
-                /could not find the table/i.test(message);
+                /could not find the (table|function)/i.test(message);
 
-            return { rows: [], error: missingTable ? null : message || 'Onbekende fout', missingTable };
+            return { stats: null, error: missingTable ? null : message || 'Onbekende fout', missingTable };
         }
 
-        return { rows: (data ?? []) as AiUsageRow[], error: null, missingTable: false };
+        if (!data || typeof data !== 'object') {
+            return { stats: null, error: 'De database gaf geen cijfers terug.', missingTable: false };
+        }
+
+        const raw = data as Record<string, unknown>;
+        const lijst = (v: unknown): UsageGroup[] =>
+            Array.isArray(v) ? v.map(r => toGroup(r as Record<string, unknown>)) : [];
+
+        return {
+            stats: {
+                days: Number(raw.days ?? days),
+                total_rows: Number(raw.total_rows ?? 0),
+                anonymous_calls: Number(raw.anonymous_calls ?? 0),
+                first_logged_at: typeof raw.first_logged_at === 'string' ? raw.first_logged_at : null,
+                periods: lijst(raw.periods),
+                features: lijst(raw.features),
+            },
+            error: null,
+            missingTable: false,
+        };
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Onbekende fout';
-        return { rows: [], error: message, missingTable: false };
+        return { stats: null, error: message, missingTable: false };
     }
 }
 
@@ -145,17 +200,16 @@ export const PRICING_USD_PER_1M: Record<string, { input: number; output: number 
 const DEFAULT_PRICING = PRICING_USD_PER_1M['gemini-3.8-flash'];
 
 /**
- * Geschatte kost van één call in US-dollar.
+ * Geschatte kost in US-dollar van een opgetelde groep.
  *
- * Thinking-tokens worden door Google als OUTPUT gefactureerd, dus die tellen
- * mee in het output-tarief. Mislukte calls hebben geen gekende tokens (NULL)
- * en kosten hier dus $0.
+ * Denk-tokens zitten al mee in `output_tokens` (de database telt ze daar bij op),
+ * omdat Google ze als output factureert. Mislukte calls hebben geen gekende
+ * tokens en kosten hier dus niets.
  */
-export function estimateCostUsd(row: AiUsageRow): number {
-    const pricing = PRICING_USD_PER_1M[row.model] ?? DEFAULT_PRICING;
-    const input = row.input_tokens ?? 0;
-    const output = (row.output_tokens ?? 0) + (row.thought_tokens ?? 0);
-    return (input / 1_000_000) * pricing.input + (output / 1_000_000) * pricing.output;
+export function estimateCostUsd(group: Pick<UsageGroup, 'model' | 'input_tokens' | 'output_tokens'>): number {
+    const pricing = PRICING_USD_PER_1M[group.model] ?? DEFAULT_PRICING;
+    return (group.input_tokens / 1_000_000) * pricing.input
+        + (group.output_tokens / 1_000_000) * pricing.output;
 }
 
 /** Opgetelde cijfers voor één periode of één functie. */
@@ -171,14 +225,6 @@ export interface UsageBucket {
 
 function emptyBucket(label: string): UsageBucket {
     return { label, calls: 0, inputTokens: 0, outputTokens: 0, failed: 0, costUsd: 0 };
-}
-
-function addRow(bucket: UsageBucket, row: AiUsageRow): void {
-    bucket.calls += 1;
-    bucket.inputTokens += row.input_tokens ?? 0;
-    bucket.outputTokens += (row.output_tokens ?? 0) + (row.thought_tokens ?? 0);
-    if (!row.success) bucket.failed += 1;
-    bucket.costUsd += estimateCostUsd(row);
 }
 
 /** Nederlandse namen voor de functie-labels die de client meestuurt. */
@@ -199,57 +245,44 @@ export const FEATURE_LABELS_NL: Record<string, string> = {
 };
 
 /**
- * Telt de rijen op per periode en per functie.
+ * Zet de opgetelde groepen uit de database om in wat het paneel toont:
+ * vier periode-kaarten, een tabel per functie en één totaalrij.
  *
- * Periodes gebruiken de lokale tijd van de browser: vandaag vanaf middernacht,
- * deze week vanaf maandag 00:00, deze maand vanaf de 1e. "Alles" = alle rijen
- * die je meegaf (dat zijn er standaard 90 dagen).
+ * Per groep wordt apart geprijsd, want spraak (TTS) heeft een heel ander
+ * tarief dan tekst. Daarom telt de database per model apart op.
  */
-export function aggregateUsage(
-    rows: AiUsageRow[],
-    now: Date = new Date()
-): { periods: UsageBucket[]; perFeature: UsageBucket[]; total: UsageBucket; anonymousCalls: number } {
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
+export function buildUsageView(stats: AiUsageStats): {
+    periods: UsageBucket[];
+    perFeature: UsageBucket[];
+    total: UsageBucket;
+    anonymousCalls: number;
+} {
+    const voegToe = (bucket: UsageBucket, g: UsageGroup): UsageBucket => ({
+        ...bucket,
+        calls: bucket.calls + g.calls,
+        inputTokens: bucket.inputTokens + g.input_tokens,
+        outputTokens: bucket.outputTokens + g.output_tokens,
+        failed: bucket.failed + g.failed,
+        costUsd: bucket.costUsd + estimateCostUsd(g),
+    });
 
-    // getDay(): 0 = zondag. Omrekenen zodat maandag dag 0 van de week is.
-    const startOfWeek = new Date(startOfToday);
-    startOfWeek.setDate(startOfWeek.getDate() - ((startOfToday.getDay() + 6) % 7));
+    const periods = PERIOD_LABELS.map(({ key, label }) =>
+        stats.periods
+            .filter(g => g.periode === key)
+            .reduce(voegToe, emptyBucket(label)),
+    );
 
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-    const today = emptyBucket('Vandaag');
-    const week = emptyBucket('Deze week');
-    const month = emptyBucket('Deze maand');
-    const all = emptyBucket('Alles');
-
-    const perFeatureMap = new Map<string, UsageBucket>();
-    let anonymousCalls = 0;
-
-    for (const row of rows) {
-        const at = new Date(row.created_at);
-
-        addRow(all, row);
-        if (at >= startOfMonth) addRow(month, row);
-        if (at >= startOfWeek) addRow(week, row);
-        if (at >= startOfToday) addRow(today, row);
-
-        if (row.user_id === null) anonymousCalls += 1;
-
-        const key = row.feature || 'onbekend';
-        let bucket = perFeatureMap.get(key);
-        if (!bucket) {
-            bucket = emptyBucket(FEATURE_LABELS_NL[key] ?? key);
-            perFeatureMap.set(key, bucket);
-        }
-        addRow(bucket, row);
+    const perFunctie = new Map<string, UsageBucket>();
+    for (const g of stats.features) {
+        const key = g.feature || 'onbekend';
+        const bestaand = perFunctie.get(key) ?? emptyBucket(FEATURE_LABELS_NL[key] ?? key);
+        perFunctie.set(key, voegToe(bestaand, g));
     }
+    const perFeature = Array.from(perFunctie.values()).sort((a, b) => b.costUsd - a.costUsd);
 
-    const perFeature = Array.from(perFeatureMap.values()).sort((a, b) => b.costUsd - a.costUsd);
+    // Totaalrij = dezelfde cijfers als de "Alles"-periode, met een eigen label.
+    const alles = periods[periods.length - 1] ?? emptyBucket('Totaal');
+    const total: UsageBucket = { ...alles, label: 'Totaal' };
 
-    // `total` is per definitie hetzelfde als de "Alles"-periode, maar met een
-    // eigen label voor de totaalrij onderaan de tabel.
-    const total: UsageBucket = { ...all, label: 'Totaal' };
-
-    return { periods: [today, week, month, all], perFeature, total, anonymousCalls };
+    return { periods, perFeature, total, anonymousCalls: stats.anonymous_calls };
 }
