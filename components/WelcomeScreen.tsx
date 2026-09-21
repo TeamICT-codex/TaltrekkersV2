@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../services/supabase';
 import { useAuth, isEmailDomainAllowed, formatAllowedDomains } from '../contexts/AuthContext';
 import PublicStatsButton from './PublicStatsButton';
+import IntroSplash from './IntroSplash';
 
 // Microsoft-logo als inline SVG — 4-square grid, officiële kleuren
 const MicrosoftLogo: React.FC<{ size?: number }> = ({ size = 20 }) => (
@@ -19,7 +20,8 @@ const WelcomeScreen: React.FC = () => {
     const [msLoading, setMsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [sentTo, setSentTo] = useState<string | null>(null);
-    const { authError, clearAuthError, signInWithMicrosoft } = useAuth();
+    // `loading` heet hier authLoading: de lokale state hierboven gebruikt die naam al.
+    const { authError, clearAuthError, signInWithMicrosoft, user, loading: authLoading } = useAuth();
 
     const handleMicrosoftLogin = async () => {
         setError(null);
@@ -102,6 +104,9 @@ const WelcomeScreen: React.FC = () => {
 
     return (
         <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 animate-fade-in">
+            {/* Intro-animatie — alleen voor bezoekers die nog niet ingelogd zijn, en pas
+                als de auth-check klaar is (anders flitst hij bij wie al ingelogd is). */}
+            {!authLoading && !user && <IntroSplash />}
             <div className="text-center mb-8">
                 <h1 className="text-4xl md:text-5xl font-bold text-tal-purple-dark mb-4">
                     Welkom bij TALent voor Taal! <PublicStatsButton emoji="🎯" />
