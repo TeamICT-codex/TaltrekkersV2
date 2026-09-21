@@ -46,7 +46,10 @@ interface GeminiProxyResponse {
  * Gevolg: `vite preview` op localhost gebruikt nu ook de proxy (die daar niet
  * draait) — test AI-functies lokaal dus via `npm run dev`.
  */
-const IS_DEV = import.meta.env.DEV;
+// LET OP: gebruik `import.meta.env.DEV` ALLEEN rechtstreeks in een `if`-blok
+// (zie callGemini). Een ternary of een tussenliggende const wordt door de
+// bundler NIET weggevouwen — op 2026-09-08 belandde de VITE_GEMINI_API_KEY zo
+// opnieuw in de live bundel. scripts/check-bundle.mjs bewaakt dit sinds 21/09.
 
 async function callGeminiViaProxy(params: GeminiProxyRequest): Promise<GeminiProxyResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -116,7 +119,15 @@ async function callGeminiDirect(params: GeminiProxyRequest): Promise<GeminiProxy
 async function callGemini(params: GeminiProxyRequest): Promise<GeminiProxyResponse> {
   const startedAt = Date.now();
   try {
-    const result = IS_DEV ? await callGeminiDirect(params) : await callGeminiViaProxy(params);
+    let result: GeminiProxyResponse;
+    if (import.meta.env.DEV) {
+      // Dev: rechtstreeks via de SDK. Dit hele blok verdwijnt uit de productie-
+      // build (import.meta.env.DEV → false), samen met callGeminiDirect en de
+      // ingelijnde VITE_GEMINI_API_KEY. Bewust een `if`, geen ternary.
+      result = await callGeminiDirect(params);
+    } else {
+      result = await callGeminiViaProxy(params);
+    }
     void logAiUsage({
       // Het opgeloste model, niet de alias: zo klopt de kostenraming ook nadat
       // Google `gemini-flash-latest` naar een nieuwer (duurder) model verlegt.
