@@ -107,7 +107,12 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
     };
 
     const extractTextFromPdf = async (file: File): Promise<string> => {
-        const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
+        // isEvalSupported: false — mitigatie voor CVE-2024-4367: een kwaadaardige PDF
+        // kon anders JavaScript uitvoeren in de app (pdf.js < 4.2 via de CDN).
+        const pdf = await pdfjsLib.getDocument({
+            data: new Uint8Array(await file.arrayBuffer()),
+            isEvalSupported: false,
+        }).promise;
         let fullText = '';
         const maxPages = Math.min(pdf.numPages, 20);
 
