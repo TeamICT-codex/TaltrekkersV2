@@ -24,6 +24,9 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
 
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [isFeedbackLoading, setIsFeedbackLoading] = useState(false);
+  // Bij welke vraag hoort de AI-feedback die nog onderweg is? Klikt de leerling
+  // al verder vóór die binnen is, dan verschijnt ze niet bij de volgende vraag.
+  const feedbackForQuestionRef = useRef(-1);
 
   const currentQuestion = questions?.[currentQuestionIndex];
   // Get list of all words for the word bank (for writing questions)
@@ -144,27 +147,34 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
 
     setIsAnswered(true);
 
-    if (isCorrect) {
-      setScore(prevScore => prevScore + 1);
-      // setFeedbackMessage(null); // Keep previous feedback if any? No, reset.
-    } else {
-      // Trigger Context-Aware Feedback
-      setIsFeedbackLoading(true);
-      try {
-        const correctAnswer = currentQuestion.woord;
-        const feedback = await generateFeedbackForError(currentQuestion.vraag, userAnswerStr, correctAnswer, { aiModel: 'fast' });
-        setFeedbackMessage(feedback);
-      } catch (e) {
-        setFeedbackMessage("Jammer, dat was niet goed. Probeer het volgende keer opnieuw!");
-      } finally {
-        setIsFeedbackLoading(false);
-      }
-    }
-
+    // Resultaat METEEN vastleggen. Vroeger gebeurde dat pas nadat de AI-feedback
+    // binnen was: klikte de leerling tijdens het laden al op "Sessie Afronden",
+    // dan verdween een fout antwoord (score te hoog, soms een onterecht Sneek-token,
+    // en het woord ontbrak in het overzicht van de leerkracht).
     setQuizResults(prevResults => [
       ...prevResults,
       { word: currentQuestion.woord, correct: isCorrect }
     ]);
+
+    if (isCorrect) {
+      setScore(prevScore => prevScore + 1);
+      return;
+    }
+
+    // Context-bewuste feedback bij een fout antwoord
+    const questionIndex = currentQuestionIndex;
+    feedbackForQuestionRef.current = questionIndex;
+    setIsFeedbackLoading(true);
+    let feedback: string;
+    try {
+      const correctAnswer = currentQuestion.woord;
+      feedback = await generateFeedbackForError(currentQuestion.vraag, userAnswerStr, correctAnswer, { aiModel: 'fast' });
+    } catch (e) {
+      feedback = "Jammer, dat was niet goed. Probeer het volgende keer opnieuw!";
+    }
+    if (feedbackForQuestionRef.current !== questionIndex) return; // leerling is al verder
+    setFeedbackMessage(feedback);
+    setIsFeedbackLoading(false);
   };
 
   const handleMCAnswer = (answerIndex: number) => {
@@ -182,6 +192,8 @@ const QuizView: React.FC<QuizViewProps> = ({ questions, onComplete, onRecordQuiz
   };
 
   const handleNext = () => {
+    feedbackForQuestionRef.current = -1; // feedback die nog onderweg is, niet meer tonen
+    setIsFeedbackLoading(false);
     setIsAnswered(false);
     setSelectedAnswer(null);
     setFeedbackMessage(null); // Clear feedback
