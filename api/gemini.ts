@@ -12,7 +12,7 @@ const ALLOWED_MODELS = new Set([
 // Werkt binnen één Vercel function-instance; bij grote schaal upgrade naar Upstash/Redis.
 const RATE_LIMITS = {
   authenticated: { max: 60, windowMs: 60_000 }, // 60 req/min per user
-  anonymous:     { max: 15, windowMs: 60_000 }, // 15 req/min per IP
+  anonymous:     { max: 15, windowMs: 60_000 }, // 15 req/min per IP — enkel als tokens tijdelijk niet te controleren zijn
 } as const;
 
 const requestLog = new Map<string, number[]>();
@@ -52,28 +52,45 @@ function getBearerToken(req: VercelRequest): string | null {
   return token || null;
 }
 
-async function getAuthenticatedUserId(req: VercelRequest): Promise<string | null> {
-  const token = getBearerToken(req);
-  if (!token) return null;
+/**
+ * Wie roept de proxy aan?
+ *   user         → geldige Supabase-sessie
+ *   missing      → geen token meegestuurd
+ *   invalid      → token geweigerd door Supabase (verlopen, vervalst, …)
+ *   unverifiable → we KUNNEN niet controleren (servervariabelen ontbreken of
+ *                  Supabase is even onbereikbaar). Dan niet iedereen buitensluiten,
+ *                  maar terugvallen op de strenge limiet per IP (vroeger gedrag).
+ */
+type CallerAuth =
+  | { kind: 'user'; userId: string }
+  | { kind: 'missing' }
+  | { kind: 'invalid' }
+  | { kind: 'unverifiable' };
 
+async function authenticateCaller(req: VercelRequest): Promise<CallerAuth> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseKey) {
     // Zonder deze twee server-variabelen kan de proxy geen enkele token
-    // verifiëren en valt IEDEREEN terug op de strengere anonieme limiet —
-    // op een school met één publiek IP is dat 15 calls/minuut voor de hele
-    // klas. Daarom luid waarschuwen in de functie-logs i.p.v. stil falen.
-    console.warn('SUPABASE_URL of SUPABASE_ANON_KEY ontbreekt: elke call telt als anoniem.');
-    return null;
+    // verifiëren. Luid waarschuwen in de functie-logs i.p.v. stil falen.
+    console.warn('SUPABASE_URL of SUPABASE_ANON_KEY ontbreekt: tokens kunnen niet gecontroleerd worden.');
+    return { kind: 'unverifiable' };
   }
+
+  const token = getBearerToken(req);
+  if (!token) return { kind: 'missing' };
 
   try {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data.user) return null;
-    return data.user.id;
+    if (!error && data.user) return { kind: 'user', userId: data.user.id };
+    const status = (error as { status?: number } | null)?.status;
+    // 4xx = Supabase heeft de token beoordeeld en geweigerd. Al de rest
+    // (netwerk, 5xx) = we weten het niet.
+    if (typeof status === 'number' && status >= 400 && status < 500) return { kind: 'invalid' };
+    return { kind: 'unverifiable' };
   } catch {
-    return null;
+    return { kind: 'unverifiable' };
   }
 }
 
@@ -119,8 +136,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Server configuration error' });
   }
 
-  // Identificeer caller: ingelogde user krijgt ruimere limiet, anonieme strenger
-  const userId = await getAuthenticatedUserId(req);
+  // Enkel ingelogde gebruikers. De app zelf werkt enkel na login, dus een oproep
+  // zonder (geldige) sessie komt niet van een leerling of leerkracht — en zou
+  // anders op kosten van de school met de Gemini-sleutel kunnen werken.
+  const caller = await authenticateCaller(req);
+  if (caller.kind === 'missing' || caller.kind === 'invalid') {
+    return res.status(401).json({
+      error: 'Je sessie is verlopen. Log opnieuw in om de AI-functies te gebruiken.',
+    });
+  }
+  const userId = caller.kind === 'user' ? caller.userId : null;
   const limit = userId ? RATE_LIMITS.authenticated : RATE_LIMITS.anonymous;
   const key = userId ? `u:${userId}` : `ip:${getClientIp(req)}`;
 
