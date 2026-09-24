@@ -85,7 +85,7 @@ const FONT_LETTER = "Poppins, 'Segoe UI', system-ui, -apple-system, sans-serif";
 const FONT_DISPLAY = "'Cormorant Garamond', 'Iowan Old Style', Georgia, serif";
 
 function vibrate(p: number | number[]) {
-  if (TOUCH && navigator.vibrate) {
+  if (TOUCH && Sound.on && navigator.vibrate) {
     try { navigator.vibrate(p); } catch { /* niet ondersteund */ }
   }
 }
@@ -652,7 +652,6 @@ function spawnBonus() {
   const c = freeCell(4);
   if (!c) return;
   G.bonus = { x: c.x, y: c.y, t0: G.time, life: 7200, born: clock };
-  if (!G.demo) Sound.bonusAppear();
   ripple(cx(c.x), cy(c.y), cell * 0.3, cell * 1.6, 1100, 0.7);
 }
 
@@ -661,7 +660,6 @@ function expireBonus() {
   if (!b) return;
   addP({ type: 'leaf', x: cx(b.x), y: cy(b.y), vx: rand(-14, 14), vy: rand(6, 16), g: 0, drag: 0.6, life: 1.4, fade: 1.2, rot: 0, vr: rand(-2.5, 2.5), size: 0.8 });
   G.bonus = null; G.nextBonus = randi(4, 7);
-  if (!G.demo) Sound.bonusGone();
 }
 
 function addTrail(v: Cell) {
@@ -689,7 +687,7 @@ function step() {
   G.snake.unshift({ x: nx, y: ny });
   if (!grow) addTrail(G.snake.pop() as Cell);
   G.grew = grow; G.moving = true;
-  if (turned) { if (!G.demo) Sound.turn(); spraySand(cx(head.x), cy(head.y), before); }
+  if (turned) spraySand(cx(head.x), cy(head.y), before);
   if (eatF) eatFood(nx, ny);
   if (eatB) eatBonus(nx, ny);
   if (G.food && G.tongueT <= 0) {
@@ -710,7 +708,6 @@ function eatFood(x: number, y: number) {
   G.score += pts;
   if (!G.demo) {
     Sound.letter(letterIndex);
-    vibrate(8);
     floatText(X, Y - cell * 0.45, '+' + pts, false);
     hooks.onLetter(w, slot);
   }
@@ -742,7 +739,7 @@ function completeWord(X: number, Y: number) {
   ripple(X, Y, cell * 0.4, cell * 3, 1600, 1.15);
   if (!G.demo) {
     Sound.word();
-    vibrate([8, 40, 8]);
+    vibrate(12);
     floatText(X, Y - cell * 1.1, '+' + pts, true);
     hooks.onWordComplete(w, pts);
     const lvl = 1 + Math.floor(G.wordsDone.length / 2);
@@ -756,19 +753,18 @@ function eatBonus(x: number, y: number) {
   const X = cx(x), Y = cy(y), frac = clamp(1 - (G.time - b.t0) / b.life, 0, 1);
   const pts = Math.round(((25 + 45 * frac) * (1 + (G.level - 1) * 0.25)) / 5) * 5;
   G.score += pts; G.bonus = null; G.nextBonus = randi(5, 8);
-  if (!G.demo) { Sound.bonus(); vibrate([6, 30, 6]); floatText(X, Y - cell * 0.45, '+' + pts, true); hooks.onScore(G.score); }
+  if (!G.demo) { floatText(X, Y - cell * 0.45, '+' + pts, true); hooks.onScore(G.score); }
   goldBurst(X, Y); ripple(X, Y, cell * 0.4, cell * 2.6, 1500, 1.1);
   G.bulges.push({ d: 0.3, a: 0.36 }); G.glow = 1.5;
 }
 
 function onLevelUp() {
-  Sound.level();
   hooks.onLevel(G.level);
   if (G.mode === 'uitdaging' && G.stones.length < maxStones()) {
     const added = addStones(G.level <= 4 ? 2 : 1, false);
     if (added.length) {
       renderBackground(); G.stoneDirty = true;
-      added.forEach((s, k) => { const X = cx(s.x), Y = cy(s.y); ripple(X, Y, cell * 0.4, cell * 2.3, 1300, 1.1); dust(X, Y); Sound.stone(k); });
+      added.forEach(s => { const X = cx(s.x), Y = cy(s.y); ripple(X, Y, cell * 0.4, cell * 2.3, 1300, 1.1); dust(X, Y); });
     }
   }
 }
@@ -779,14 +775,14 @@ function die(reason: EndReason) {
   G.prev = G.snake.map(p => ({ x: p.x, y: p.y })); G.grew = true;
   G.shatterOn = false; G.shattered = 0; G.shatterDur = clamp(0.25 + G.snake.length * 0.022, 0.4, 1.0);
   setState('dying');
-  if (!G.demo) { Sound.die(); vibrate([30, 40, 70]); shake(cell * 0.35); }
+  if (!G.demo) shake(cell * 0.35);
 }
 
 const TMP: Sample = { x: 0, y: 0, tx: 0, ty: 0, d: 0, r: 0 };
 function updateDying(dt: number) {
   G.dieT += dt;
   if (G.dieT >= SHATTER_AT) {
-    if (!G.shatterOn) { G.shatterOn = true; G.shattered = 0; if (!G.demo) Sound.shatter(); }
+    if (!G.shatterOn) { G.shatterOn = true; G.shattered = 0; }
     const total = G.bodyLen + 0.6, target = clamp((G.dieT - SHATTER_AT) / G.shatterDur, 0, 1) * total;
     let guard = 0;
     while (G.shattered < target && guard++ < 200) {
@@ -815,7 +811,6 @@ function finishDeath() {
 
 function winRound() {
   if (G.demo) { newGame(G.mode, true); return; }
-  Sound.win();
   setState('over');
   hooks.onRoundEnd(roundResult('full'));
 }

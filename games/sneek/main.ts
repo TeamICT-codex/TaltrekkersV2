@@ -67,6 +67,7 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
   const info = readEmbedInfo();
   const embedded = info.embedded;
   let cfg: SneekConfig = { ...DEFAULT_CONFIG, ...opts.config, ...info.initial };
+  Sound.setAllowed(cfg.soundAllowed);
 
   const REDUCED = mq('(prefers-reduced-motion: reduce)');
   const TOUCH = mq('(pointer: coarse)') || ('ontouchstart' in window && navigator.maxTouchPoints > 0 && mq('(hover: none)'));
@@ -82,13 +83,13 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     garden: el<HTMLCanvasElement>('snGarden'), ring: el<HTMLCanvasElement>('snRing'), fx: el<HTMLCanvasElement>('snFx'),
     modeTag: el('snModeTag'), time: el('snTime'), score: el('snScore'), best: el('snBest'), bestWrap: el('snBestWrap'),
     pips: el('snPips'), seal: el('snSeal'), sealTxt: el('snSealTxt'),
-    btnPause: el('snBtnPause'), btnSfx: el('snBtnSfx'), btnMusic: el('snBtnMusic'), btnClose: el('snBtnClose'),
+    btnPause: el('snBtnPause'), btnSfx: el('snBtnSfx'), btnClose: el('snBtnClose'),
     tiles: el('snTiles'), count: el('snCount'), countN: el('snCountN'),
     hint: el('snHint'), hintTxt: el('snHintTxt'), banner: el('snBanner'), bannerK: el('snBannerK'), bannerL: el('snBannerL'),
     card: el('snWordcard'), cardWord: el('snWcWord'), cardDef: el('snWcDef'), live: el('snLive'), pad: el('snPad'),
     menu: el('snMenu'), ensoBig: el<HTMLCanvasElement>('snEnsoBig'), modes: el('snModes'), source: el('snSource'),
     goldNote: el('snGoldNote'), adminText: el('snAdminText'), visitTxt: el('snVisitTxt'), start: el('snStart'),
-    pauseOv: el('snPauseOv'), resume: el('snResume'), stop: el('snStopBtn'), tglSfx: el('snTglSfx'), tglMusic: el('snTglMusic'),
+    pauseOv: el('snPauseOv'), resume: el('snResume'), stop: el('snStopBtn'), tglSfx: el('snTglSfx'), soundRow: el('snSoundRow'),
     roundOv: el('snRoundOv'), roundBest: el('snRoundBest'), roundBadge: el('snRoundBadge'), roundTitle: el('snRoundTitle'), roundSub: el('snRoundSub'),
     rScore: el('snRScore'), rBest: el('snRBest'), rWords: el('snRWords'), rTime: el('snRTime'), rList: el('snRList'), rWordsH: el('snRWordsH'), rEmpty: el('snREmpty'),
     next: el('snNext'), endVisit: el('snEndVisit'),
@@ -252,7 +253,7 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
       ringFrac = frac; ringWarn = warn;
       drawEnso($.ring, Math.max(0.02, frac), warn ? [163, 54, 31] : [24, 20, 17]);
     }
-    if (warn && !visit.warned && E.getState() === 'playing') { visit.warned = true; Sound.warn(); announce('Nog 30 seconden'); }
+    if (warn && !visit.warned && E.getState() === 'playing') { visit.warned = true; announce('Nog 30 seconden'); }
   }
 
   function tickHUD(dt: number) {
@@ -340,7 +341,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     if (m === mode) return;
     mode = m;
     if (!embedded) store.set('mode', m);
-    if (sound) Sound.select();
     refreshMenu(); updateHUD();
     if (E.getState() === 'demo') E.startDemo(mode);
   }
@@ -367,7 +367,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
 
   function beginVisit() {
     if (overlay !== 'menu' || visit.ended) return; // enkel vanuit het menu, nooit dubbel
-    Sound.init();
     if (!visit.started) {
       visit = freshVisit(best[mode]);
       visit.started = true;
@@ -385,7 +384,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     E.startRound(mode);
     hudScore = 0; hudShown = -1;
     showHint(true);
-    Sound.start();
     updateHUD();
   }
 
@@ -396,6 +394,7 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
 
   function onRoundEnd(r: E.RoundResult) {
     if (!visit.started || visit.ended) return;
+    Sound.end();
     visit.rounds.push({ score: r.score, words: r.words.map(w => w.word), reason: r.reason });
     for (const w of r.words) visit.words.set(w.word.toLocaleLowerCase('nl'), w);
     visit.letters += r.letters;
@@ -433,7 +432,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     window.setTimeout(() => {
       if (overlay !== ov) return;
       node.classList.add('show');
-      Sound.stamp();
     }, 650);
   }
 
@@ -491,7 +489,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     ensoAnim = { t0: performance.now(), dur: 1400, cv: $.ensoDone };
     drawEnso($.ensoDone, 0);
     stampRecord($.doneBest, visit.bestRound > visit.recordBefore && visit.bestRound > 0, 'done');
-    Sound.win();
     updateHUD();
     announce(`Tuinbezoek klaar. ${words.length} woorden gebouwd.`);
   }
@@ -503,7 +500,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
 
   function onDone() {
     if (overlay !== 'done') return;
-    Sound.click();
     closeGame();
   }
 
@@ -512,18 +508,15 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     const s = E.getState();
     if (s === 'playing') {
       E.pause();
-      Sound.pause();
       openOverlay('pause', $.resume);
     } else if (s === 'paused' || overlay === 'pause') {
       E.resume();
-      Sound.pause();
       closeOverlays();
     }
     updateHUD();
   }
 
   function stopVisit() {
-    Sound.click();
     if (E.roundActive()) {
       if (E.getState() === 'paused') E.resume();
       closeOverlays();
@@ -534,7 +527,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
   }
 
   function onCloseButton() {
-    Sound.init();
     if (!visit.started || visit.ended) { closeGame(); return; }
     const s = E.getState();
     if (s === 'playing') togglePause();
@@ -547,12 +539,18 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     w: 'up', W: 'up', z: 'up', Z: 'up', s: 'down', S: 'down', a: 'left', A: 'left', q: 'left', Q: 'left', d: 'right', D: 'right',
   };
 
-  function toggleSfx() { Sound.init(); Sound.setSfx(!Sound.sfx); syncToggles(); if (Sound.sfx) Sound.click(); }
-  function toggleMusic() { Sound.init(); Sound.setMusic(!Sound.music); syncToggles(); Sound.click(); }
+  function toggleSound() {
+    if (!Sound.allowed) return;
+    Sound.setOn(!Sound.on);
+    syncToggles();
+    if (Sound.on) Sound.letter(0); // één zacht bevestigingstoontje
+  }
   function syncToggles() {
-    const s = Sound.sfx ? 'true' : 'false', m = Sound.music ? 'true' : 'false';
-    $.btnSfx.setAttribute('aria-pressed', s); $.tglSfx.setAttribute('aria-pressed', s);
-    $.btnMusic.setAttribute('aria-pressed', m); $.tglMusic.setAttribute('aria-pressed', m);
+    const s = Sound.on ? 'true' : 'false';
+    $.btnSfx.setAttribute('aria-pressed', s);
+    $.tglSfx.setAttribute('aria-pressed', s);
+    $.btnSfx.hidden = !Sound.allowed;
+    $.soundRow.hidden = !Sound.allowed;
   }
 
   window.addEventListener('keydown', e => {
@@ -560,9 +558,7 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     const t = e.target as HTMLElement | null;
     if (t && t.closest && t.closest('input, textarea, select, .sn-demo')) return;
     const k = e.key;
-    Sound.init();
-    if (k === 'm' || k === 'M') { toggleSfx(); return; }
-    if (k === 'n' || k === 'N') { toggleMusic(); return; }
+    if (k === 'm' || k === 'M') { toggleSound(); return; }
 
     if (overlay === 'menu') {
       if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'a' || k === 'A' || k === 'q' || k === 'Q' || k === 'd' || k === 'D') {
@@ -607,8 +603,6 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     }
   });
 
-  const unlock = () => Sound.init();
-  for (const ev of ['pointerdown', 'touchend', 'click'] as const) document.addEventListener(ev, unlock, { passive: true });
 
   let touch0: { x: number; y: number } | null = null;
   document.addEventListener('touchstart', e => {
@@ -631,10 +625,8 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
   $.pad.querySelectorAll<HTMLButtonElement>('button').forEach(b => {
     b.addEventListener('pointerdown', e => {
       e.preventDefault();
-      Sound.init();
       const d = b.dataset.dir as E.DirName | undefined;
       if (d && E.DIRS[d]) E.pushDir(E.DIRS[d]);
-      if (TOUCH && navigator.vibrate) { try { navigator.vibrate(6); } catch { /* */ } }
       b.classList.add('hit');
       window.setTimeout(() => b.classList.remove('hit'), 110);
     });
@@ -644,16 +636,14 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     setMode(b.dataset.mode === 'uitdaging' ? 'uitdaging' : 'rustig', true);
   }));
   $.start.addEventListener('click', () => beginVisit());
-  $.next.addEventListener('click', () => { Sound.click(); nextRound(); });
-  $.endVisit.addEventListener('click', () => { if (overlay !== 'round') return; Sound.click(); endVisit(); });
+  $.next.addEventListener('click', () => nextRound());
+  $.endVisit.addEventListener('click', () => { if (overlay === 'round') endVisit(); });
   $.resume.addEventListener('click', () => togglePause());
   $.stop.addEventListener('click', () => stopVisit());
   $.doneBtn.addEventListener('click', () => onDone());
-  $.btnPause.addEventListener('click', () => { Sound.init(); const s = E.getState(); if (s === 'playing' || s === 'paused') togglePause(); });
-  $.btnSfx.addEventListener('click', toggleSfx);
-  $.btnMusic.addEventListener('click', toggleMusic);
-  $.tglSfx.addEventListener('click', toggleSfx);
-  $.tglMusic.addEventListener('click', toggleMusic);
+  $.btnPause.addEventListener('click', () => { const s = E.getState(); if (s === 'playing' || s === 'paused') togglePause(); });
+  $.btnSfx.addEventListener('click', toggleSound);
+  $.tglSfx.addEventListener('click', toggleSound);
   $.btnClose.addEventListener('click', onCloseButton);
 
   document.addEventListener('visibilitychange', () => {
@@ -785,6 +775,8 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
   // ─── Config van de host ───────────────────────────────────
   listenForConfig(embedded, c => {
     cfg = { ...cfg, ...c };
+    Sound.setAllowed(cfg.soundAllowed);
+    syncToggles();
     if (c.best) best = { ...c.best };
     if (c.mode && !visit.started) mode = c.mode;
     applyTheme();
@@ -832,6 +824,8 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     config: () => ({ ...cfg }),
     reset(next) {
       cfg = { ...cfg, ...next };
+      Sound.setAllowed(cfg.soundAllowed);
+      syncToggles();
       if (next.best !== undefined) best = readBest();
       if (next.mode) mode = next.mode;
       applyTheme();

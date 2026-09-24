@@ -36,6 +36,8 @@ export interface SneekConfig {
   mode: GameMode | null;
   /** Hoe verdien je een nieuw token — komt van de host (één bron voor de drempel). */
   earnHint: string;
+  /** false = geluid volledig uit (bv. instelling van de leerkracht); de knop verdwijnt. */
+  soundAllowed: boolean;
 }
 
 export const DEFAULT_CONFIG: SneekConfig = {
@@ -48,6 +50,7 @@ export const DEFAULT_CONFIG: SneekConfig = {
   best: null,
   mode: null,
   earnHint: 'Verdien een nieuw Sneek-token met een sterke oefensessie.',
+  soundAllowed: true,
 };
 
 export interface RoundSummary {
@@ -90,6 +93,7 @@ export function sanitizeConfig(raw: unknown): Partial<SneekConfig> {
   if (typeof r.text === 'string') out.text = r.text.replace(/\s+/g, ' ').trim().slice(0, 280);
   if (Array.isArray(r.words)) out.words = sanitizeWords(r.words);
   if (typeof r.goldSnake === 'boolean') out.goldSnake = r.goldSnake;
+  if (typeof r.soundAllowed === 'boolean') out.soundAllowed = r.soundAllowed;
   const rounds = intIn(r.rounds, 1, 5);
   if (rounds !== undefined) out.rounds = rounds;
   const secs = intIn(r.visitSeconds, 30, 900);

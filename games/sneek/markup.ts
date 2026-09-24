@@ -4,7 +4,6 @@
 const ICON = {
   pause: '<svg viewBox="0 0 24 24"><g class="i-pause"><path d="M9 6.5v11M15 6.5v11"/></g><g class="i-play"><path d="M8.5 6v12l9.5-6z"/></g></svg>',
   sfx: '<svg viewBox="0 0 24 24"><path d="M4.5 9.5h3l4.5-3.5v12l-4.5-3.5h-3z"/><g class="on"><path d="M15.5 9.3a3.8 3.8 0 0 1 0 5.4"/><path d="M18 7a7 7 0 0 1 0 10"/></g><g class="off"><path d="M16 9.5l4.5 5M20.5 9.5l-4.5 5"/></g></svg>',
-  music: '<svg viewBox="0 0 24 24"><path d="M9.5 17.5V6.8l9-2.3v10.7"/><circle cx="7.2" cy="17.6" r="2.3"/><circle cx="16.2" cy="15.3" r="2.3"/><g class="off"><path d="M4 4l16 16"/></g></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>',
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7"/></svg>',
   calm: '<svg viewBox="0 0 24 24"><path d="M3 9c3-2.5 6-2.5 9 0s6 2.5 9 0"/><path d="M3 15c3-2.5 6-2.5 9 0s6 2.5 9 0"/></svg>',
@@ -40,8 +39,7 @@ export const MARKUP = `
       <div class="sn-seal" id="snSeal" title="Niveau 1" aria-hidden="true"><span id="snSealTxt">1</span></div>
       <div class="sn-btns">
         <button class="sn-icon" id="snBtnPause" type="button" aria-label="Pauze (spatie)" title="Pauze (spatie)">${ICON.pause}</button>
-        <button class="sn-icon sn-desk" id="snBtnSfx" type="button" aria-label="Geluid (M)" title="Geluid (M)" aria-pressed="true">${ICON.sfx}</button>
-        <button class="sn-icon sn-desk" id="snBtnMusic" type="button" aria-label="Muziek (N)" title="Muziek (N)" aria-pressed="false">${ICON.music}</button>
+        <button class="sn-icon sn-desk" id="snBtnSfx" type="button" aria-label="Geluid aan of uit (M)" title="Geluid aan/uit (M)" aria-pressed="false">${ICON.sfx}</button>
         <button class="sn-icon" id="snBtnClose" type="button" aria-label="Sneek sluiten" title="Sluiten" hidden>${ICON.close}</button>
       </div>
     </div>
@@ -62,7 +60,7 @@ export const MARKUP = `
   </main>
 
   <footer class="sn-foot" id="snFoot">
-    <div class="sn-hints sn-kb"><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd>&nbsp;sturen</span><span><kbd>Spatie</kbd>&nbsp;pauze</span><span><kbd>M</kbd>&nbsp;geluid</span></div>
+    <div class="sn-hints sn-kb"><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd>&nbsp;sturen</span><span><kbd>Spatie</kbd>&nbsp;pauze</span></div>
     <div class="sn-hints sn-th">Veeg over het scherm of tik op de stenen</div>
     <div class="sn-pad" id="snPad">
       <button type="button" data-dir="up" aria-label="Omhoog">${ICON.up}</button>
@@ -101,7 +99,7 @@ export const MARKUP = `
     </div>
     <div class="sn-visit"><span id="snVisitTxt">3 rondes · 5 minuten speeltijd</span></div>
     <div class="sn-actions"><button type="button" class="sn-btn" id="snStart">Begin <kbd>Enter</kbd></button></div>
-    <div class="sn-keys sn-kb"><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> of <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> sturen</span><span><kbd>Spatie</kbd> pauze</span><span><kbd>M</kbd> geluid · <kbd>N</kbd> muziek</span></div>
+    <div class="sn-keys sn-kb"><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> of <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> sturen</span><span><kbd>Spatie</kbd> pauze</span></div>
     <div class="sn-keys sn-th"><span>Veeg over het scherm om te sturen, of tik op de stenen onder de tuin.</span></div>
   </div>
 </div>
@@ -113,9 +111,8 @@ export const MARKUP = `
     <h2 id="snPauseTitle">Even rust</h2>
     <p class="sn-sub">De tuin wacht op jou · je speeltijd staat stil</p>
     ${CRACK}
-    <div class="sn-toggles">
-      <button type="button" class="sn-toggle" id="snTglSfx" aria-pressed="true"><i aria-hidden="true"></i>Geluid</button>
-      <button type="button" class="sn-toggle" id="snTglMusic" aria-pressed="false"><i aria-hidden="true"></i>Muziek</button>
+    <div class="sn-toggles" id="snSoundRow">
+      <button type="button" class="sn-toggle" id="snTglSfx" aria-pressed="false"><i aria-hidden="true"></i>Zachte geluidjes</button>
     </div>
     <div class="sn-actions" style="margin-top:20px">
       <button type="button" class="sn-btn" id="snResume">Verder <kbd>Spatie</kbd></button>
