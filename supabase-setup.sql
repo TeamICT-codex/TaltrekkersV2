@@ -55,12 +55,15 @@ ALTER TABLE public.word_progress ENABLE ROW LEVEL SECURITY;
 -- Door de check te isoleren in een SECURITY DEFINER functie die
 -- RLS bypasst, kunnen alle teacher-policies veilig aanroepen.
 CREATE OR REPLACE FUNCTION public.is_teacher()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE sql SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.profiles
         WHERE id = auth.uid() AND role IN ('teacher', 'admin')
     );
-$$ LANGUAGE SQL SECURITY DEFINER STABLE;
+$$;
 
 GRANT EXECUTE ON FUNCTION public.is_teacher() TO authenticated;
 
@@ -68,12 +71,15 @@ GRANT EXECUTE ON FUNCTION public.is_teacher() TO authenticated;
 -- is_teacher() hierboven; deze is_admin() is voor strikter admin-only checks
 -- (bv. feedback-overzicht raadplegen).
 CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE sql SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.profiles
         WHERE id = auth.uid() AND role = 'admin'
     );
-$$ LANGUAGE SQL SECURITY DEFINER STABLE;
+$$;
 
 GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 
@@ -93,11 +99,14 @@ CREATE POLICY "Teachers can view all profiles"
 ON public.profiles FOR SELECT
 USING (public.is_teacher());
 
--- Gebruikers kunnen hun eigen profiel updaten (voor rol-upgrade via leerkrachtcode)
+-- Gebruikers kunnen hun eigen profiel updaten (klas, voorkeuren, XP).
+-- Rol, naam en e-mail zijn afgeschermd door de trigger profiles_guard uit
+-- migration-2026-09-24-beveiliging-rollen.sql — draai die NA dit script.
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" 
-ON public.profiles FOR UPDATE 
-USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile"
+ON public.profiles FOR UPDATE
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
 
 -- =====================================================
 -- STAP 4: RLS Policies - Practice Sessions
@@ -205,7 +214,7 @@ DROP POLICY IF EXISTS "Authenticated users can insert feedback" ON public.feedba
 DROP POLICY IF EXISTS "Anyone can insert feedback" ON public.feedback;
 CREATE POLICY "Authenticated users can insert feedback"
 ON public.feedback FOR INSERT
-WITH CHECK (auth.uid() IS NOT NULL);
+WITH CHECK (auth.uid() IS NOT NULL AND (user_id IS NULL OR user_id = auth.uid()));
 
 -- Alleen admins kunnen het feedback-overzicht bekijken (leerkrachten kunnen
 -- wel feedback GEVEN, INSERT-policy hierboven blijft staan).
@@ -228,21 +237,41 @@ ALTER TABLE public.word_progress
     ADD CONSTRAINT word_progress_user_word_list_unique
     UNIQUE (user_id, word, list_id);
 
--- RPC functie: batch upsert van woord-voortgang in één DB call
+-- RPC functie: batch upsert van woord-voortgang in één DB call.
+-- Enkel de eigen voortgang (p_user_id moet de ingelogde gebruiker zijn).
 CREATE OR REPLACE FUNCTION public.upsert_word_progress(
     p_user_id UUID,
     p_list_id TEXT,
     p_words TEXT[]
-) RETURNS void AS $$
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
+    IF auth.uid() IS NULL OR p_user_id IS DISTINCT FROM auth.uid() THEN
+        RAISE EXCEPTION 'Je kunt enkel je eigen voortgang bijwerken.' USING ERRCODE = '42501';
+    END IF;
+    IF p_words IS NULL OR cardinality(p_words) = 0 THEN
+        RETURN;
+    END IF;
+    IF cardinality(p_words) > 500 THEN
+        RAISE EXCEPTION 'Te veel woorden in één keer (max. 500).';
+    END IF;
+
     INSERT INTO public.word_progress (user_id, word, list_id, practiced_count, last_practiced_at)
-    SELECT p_user_id, unnest(p_words), p_list_id, 1, NOW()
+    SELECT p_user_id, w, p_list_id, 1, now()
+    FROM (SELECT DISTINCT unnest(p_words) AS w) AS s
+    WHERE w IS NOT NULL AND length(w) BETWEEN 1 AND 200
     ON CONFLICT (user_id, word, list_id)
     DO UPDATE SET
         practiced_count = word_progress.practiced_count + 1,
-        last_practiced_at = NOW();
+        last_practiced_at = now();
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_word_progress(UUID, TEXT, TEXT[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.upsert_word_progress(UUID, TEXT, TEXT[]) TO authenticated;
 
 -- =====================================================
 -- STAP 9: Registered students (klassenlijst)
@@ -257,12 +286,14 @@ CREATE TABLE IF NOT EXISTS public.registered_students (
 
 ALTER TABLE public.registered_students ENABLE ROW LEVEL SECURITY;
 
--- Iedereen mag de lijst van leerlingen lezen (nodig voor de Login-screen
--- waar leerlingen zichzelf selecteren vóór ze inloggen).
+-- Enkel leerkrachten en admins mogen de klaslijst lezen (namen + klas).
+-- (Vroeger: iedereen, ook zonder login — voor een zelfselectie-scherm dat
+-- niet meer bestaat.)
 DROP POLICY IF EXISTS "Anyone can read registered students" ON public.registered_students;
-CREATE POLICY "Anyone can read registered students"
+DROP POLICY IF EXISTS "Teachers can read registered students" ON public.registered_students;
+CREATE POLICY "Teachers can read registered students"
 ON public.registered_students FOR SELECT
-USING (true);
+USING (public.is_teacher());
 
 -- Alleen leerkrachten mogen leerlingen toevoegen/verwijderen.
 DROP POLICY IF EXISTS "Teachers can insert students" ON public.registered_students;
@@ -353,5 +384,6 @@ END $$;
 
 -- =====================================================
 -- KLAAR! ✅
--- Je database is nu correct geconfigureerd.
+-- Draai daarna nog migration-2026-09-24-beveiliging-rollen.sql
+-- (bescherming van rol/naam/e-mail + leerkrachtcode als hash).
 -- =====================================================
