@@ -68,12 +68,15 @@ type CallerAuth =
   | { kind: 'unverifiable' };
 
 async function authenticateCaller(req: VercelRequest): Promise<CallerAuth> {
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY;
+  // Zelfde Supabase-project als de app. De VITE_-variabelen staan al in Vercel
+  // (de app zelf heeft ze nodig) en zijn ook in serverfuncties beschikbaar;
+  // aparte server-variabelen zijn dus optioneel.
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
   if (!supabaseUrl || !supabaseKey) {
-    // Zonder deze twee server-variabelen kan de proxy geen enkele token
+    // Zonder URL en publieke sleutel kan de proxy geen enkele token
     // verifiëren. Luid waarschuwen in de functie-logs i.p.v. stil falen.
-    console.warn('SUPABASE_URL of SUPABASE_ANON_KEY ontbreekt: tokens kunnen niet gecontroleerd worden.');
+    console.warn('Supabase-URL of -sleutel ontbreekt (SUPABASE_URL/SUPABASE_ANON_KEY of VITE_SUPABASE_URL/VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY): tokens kunnen niet gecontroleerd worden.');
     return { kind: 'unverifiable' };
   }
 
