@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { SNEEK_RULES, sneekTokenEarned } from '../constants/sneek';
 import { PracticeSettings, QuizResult, FrayerModelData, SessionSummaryData, SessionTimingData, UserData, WordListProgress, AllUsersData, WordMasteryInfo } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { saveSessionToSupabase, updateWordProgressInSupabase } from '../services/db';
@@ -205,17 +206,13 @@ export function usePracticeSession({
     const earnedXP = sessionScore * xpMultiplier;
     const newPoints = (currentUserData.points || 0) + earnedXP;
 
-    // Reward tokens — voor MVP enkel Sneek-tokens.
-    // Default drempel: ≥75% accuracy + ≥10 vragen (verlaagd van 90% → 75% in juni
-    // 2026 — meer leerlingen belonen en gemotiveerd houden weegt nu zwaarder dan
-    // strengheid; de beloning moet nog steeds verdiend voelen, maar haalbaarder zijn).
-    //
-    // Droak-tokens worden voorlopig NIET meer uitgekeerd (game heeft geen echte
-    // gameplay-loop). DB-velden blijven bestaan voor een mogelijke v2-feature.
-    const accuracy = quizResults.length > 0 ? sessionScore / quizResults.length : 0;
-    const snakeAccuracyThreshold = isWeakWordsSession ? 0.65 : 0.75;
-    const snakeMinQuestions = isWeakWordsSession ? 5 : 10;
-    const earnedSnakeTokens = accuracy >= snakeAccuracyThreshold && quizResults.length >= snakeMinQuestions ? 1 : 0;
+    // Reward tokens (Sneek). Drempels en spaarlimiet staan op één plek:
+    // constants/sneek.ts. Droak-tokens worden voorlopig niet uitgekeerd.
+    const correctCount = quizResults.filter(r => r.correct).length;
+    const reachedThreshold = sneekTokenEarned(correctCount, quizResults.length, isWeakWordsSession);
+    const currentSnakeTokens = currentUserData.snakeTokens ?? 0;
+    const tokenCapReached = reachedThreshold && currentSnakeTokens >= SNEEK_RULES.maxTokens;
+    const earnedSnakeTokens = reachedThreshold && !tokenCapReached ? 1 : 0;
     const lastCheckpoint = currentUserData.lastXpRewardCheckpoint ?? 0;
     const newCheckpoint = Math.floor(newPoints / 100) * 100;
     const earnedDragonTokens = 0; // tijdelijk: geen Droak-tokens meer
@@ -253,6 +250,7 @@ export function usePracticeSession({
       // — kritiek voor SessionSummary om niet onterecht "Beloning vrijgespeeld!"
       // te tonen bij brakke sessies waar de leerling nog wel oude tokens heeft.
       earnedSnakeTokens,
+      tokenCapReached,
     });
 
     // --- Achievement detection ---

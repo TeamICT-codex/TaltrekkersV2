@@ -108,6 +108,9 @@ export interface SessionSummaryData {
    *  speler 2x XP en gold een soepelere Sneek-drempel. Wordt door
    *  SessionSummary gebruikt om een speciale beloningsbadge te tonen. */
   weakWordsBonus?: boolean;
+  /** True als de leerling de drempel haalde maar al het maximum aan tokens had
+   *  (SNEEK_RULES.maxTokens) — dan kwam er geen token bij. */
+  tokenCapReached?: boolean;
 }
 
 export interface UserData {
@@ -120,7 +123,7 @@ export interface UserData {
   lastPracticeDate: string | null; // ISO Date string (YYYY-MM-DD)
   points: number;
   avatarId: string;
-  // Reward tokens — verdiend bij sessie ≥ 80% of per 100 XP, in te ruilen voor Sneek/Droak.
+  // Reward tokens — regels en drempels: constants/sneek.ts (SNEEK_RULES).
   snakeTokens?: number;
   dragonTokens?: number;
   // Drempel-tracker voor "elke 100 XP = 1 token van elk soort". Onthoudt het laatste
@@ -131,6 +134,8 @@ export interface UserData {
   wordListProgress?: Record<string, WordListProgress>;
   // Achievements already shown (to prevent duplicate celebrations)
   achievementsUnlocked?: string[];
+  // Beste ronde in Sneek per modus, per leerling (lokaal bewaard; niet naar de database)
+  sneekBest?: { rustig: number; uitdaging: number };
 }
 
 // Tracking welke woorden al geoefend zijn per woordenlijst/bestand

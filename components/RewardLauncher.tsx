@@ -1,191 +1,138 @@
 import React, { useState } from 'react';
-import { createRewardOverlay } from '../services/reward/embed';
 import { useGameSettings } from '../hooks/useGameSettings';
-import SneekIntroModal, { hasSeenSneekIntro } from './SneekIntroModal';
-import { setSneekHighscore } from '../hooks/useSneekHighscore';
+import { openSneek, isSneekOpen, type SneekResult } from '../services/sneek/host';
+import type { SneekLaunchData } from '../services/sneek/launchData';
+import { SNEEK_RULES, sneekEarnHint, sneekShortHint } from '../constants/sneek';
 
 interface RewardLauncherProps {
     snakeTokens: number;
-    dragonTokens: number;
-    /** Callback wanneer een token wordt ingewisseld voor een spel (UI-state moet bijgewerkt). */
+    /** Compatibiliteit met bestaande aanroepers; Droak wordt niet meer getoond. */
+    dragonTokens?: number;
+    /** Token aftrekken. Wordt pas aangeroepen wanneer de leerling in het spel echt start. */
     onSpend: (mode: 'snake' | 'dragon') => void;
-    /** Optioneel: callback wanneer de speler het spel afrondt — score komt mee. */
-    onComplete?: (mode: 'snake' | 'dragon', score?: number) => void;
-    /** 'inline' = grote kaarten (SessionSummary), 'compact' = kleine knoppen (Header). */
+    /** Woorden, record en slang voor dit bezoek (zie services/sneek/launchData). */
+    launch: SneekLaunchData;
+    /** Resultaat van het bezoek (beste ronde) — om het record per leerling te bewaren. */
+    onResult?: (result: SneekResult) => void;
+    /** 'inline' = kaart (SessionSummary), 'compact' = chip (Header). */
     variant?: 'inline' | 'compact';
+    /** Tijdelijk niet speelbaar (bv. midden in een oefening) — met uitleg. */
+    disabledReason?: string;
 }
 
-// TALent voor Taal-stijl op de overlay-achtergrond — overschrijft het donkere zwart
-// van de SDK zodat de transitie van app naar reward minder hard aanvoelt.
-function applyTaltrekkersShellStyle(element: HTMLElement) {
-    // Achtergrond met tal-purple tint (dezelfde HSL als app, maar transparant)
-    element.style.background = 'radial-gradient(circle at 50% 30%, rgba(78, 50, 153, 0.85) 0%, rgba(15, 23, 42, 0.92) 100%)';
+/**
+ * Opent Sneek — de woordentuin. Het token wordt NIET bij de klik afgetrokken,
+ * maar pas wanneer de leerling in het spel op "Begin" drukt. Openen, rondkijken
+ * en sluiten kost dus niets; een laadfout ook niet.
+ */
+// De vroegere standaardtekst noemde een verkeerde drempel (≥ 80%). Staat die nog
+// ongewijzigd in de game-instellingen, dan tonen we hem niet in het spel.
+const OUTDATED_DEFAULT_TEXT = 'Een korte ontspanning na goed werk! Je verdient een Sneek-token bij elke sessie waar je ≥ 80% goed scoort. Wissel het in voor een rondje slangetje vangen — even het hoofd leegmaken voor je verder oefent.';
+const normalize = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+function adminTextForGame(text: string | null | undefined): string | undefined {
+    if (!text || !normalize(text)) return undefined;
+    return normalize(text) === OUTDATED_DEFAULT_TEXT ? undefined : text;
 }
 
-// MVP-keuze: enkel Sneek tonen. Droak blijft als concept aanwezig in DB en
-// game-settings maar verdient pas een echte launch wanneer er een gameplay-loop
-// rond gebouwd is (zie roadmap). dragonTokens-prop blijft voor API-stabiliteit.
 const RewardLauncher: React.FC<RewardLauncherProps> = ({
     snakeTokens,
-    // dragonTokens — bewust niet meer gerenderd; prop blijft compatibel
     onSpend,
-    onComplete,
+    launch,
+    onResult,
     variant = 'inline',
+    disabledReason,
 }) => {
     const gameSettings = useGameSettings();
-    const [showIntro, setShowIntro] = useState(false);
+    const [opening, setOpening] = useState(false);
 
-    const openGame = (mode: 'snake' | 'dragon') => {
-        const theme = mode === 'snake'
-            ? (gameSettings?.snake_theme ?? 'aurora')
-            : (gameSettings?.dragon_theme ?? 'ember');
-        const text = mode === 'snake'
-            ? gameSettings?.snake_text || undefined
-            : gameSettings?.dragon_text || undefined;
+    const canPlay = snakeTokens > 0 && !disabledReason;
 
-        // Tijdslot: voorkomt dat 1 token leidt tot oneindig spelen via in-game
-        // restart (spatie/enter na crash). Na MAX_SESSION_MS sluit de overlay
-        // automatisch — speler moet een nieuwe token verdienen om verder te
-        // spelen. 5 min = ruim genoeg voor één goede sessie maar grenst de
-        // 'tokens als consumptie-artikel'-misbruik af.
-        const MAX_SESSION_MS = 5 * 60 * 1000;
-        let closed = false;
-        let sessionTimer: number | undefined;
-        let controllerRef: ReturnType<typeof createRewardOverlay> | null = null;
-
-        const closeOverlay = (delayMs: number = 0) => {
-            if (closed) return;
-            closed = true;
-            if (sessionTimer !== undefined) {
-                window.clearTimeout(sessionTimer);
-                sessionTimer = undefined;
-            }
-            window.setTimeout(() => controllerRef?.close(), delayMs);
-        };
-
-        controllerRef = createRewardOverlay({
-            mode,
-            theme,
-            text,
-            difficulty: 'easy',
-            pageUrl: '/reward/reward.html',
-            showPanel: false,
-            showClose: true,
-            hideNav: true,
-            compactHud: true,
-            autoStartSnake: false,
-            onComplete: ({ score }) => {
-                // Sla nieuwe highscore op (alleen Sneek heeft een score-tracking)
-                if (mode === 'snake' && typeof score === 'number') {
-                    setSneekHighscore(score);
-                }
-                onComplete?.(mode, score);
-                // Sluit overlay na korte delay zodat speler de victory-animatie
-                // nog ziet. Dwingt af dat een nieuwe token vereist is voor de
-                // volgende game (geen "Play again" zonder kost).
-                closeOverlay(2000);
-            },
+    const open = () => {
+        if (!canPlay || isSneekOpen()) return;
+        setOpening(true);
+        openSneek({
+            launch,
+            theme: gameSettings?.snake_theme ?? 'aurora',
+            text: adminTextForGame(gameSettings?.snake_text),
+            earnHint: sneekEarnHint(),
+            rounds: SNEEK_RULES.rounds,
+            visitSeconds: SNEEK_RULES.visitSeconds,
+            onStarted: () => onSpend('snake'),
+            onComplete: result => onResult?.(result),
+            onClose: () => setOpening(false),
         });
-
-        // Safety net: ook bij CRASH + in-game restart (spatie/enter) sluit de
-        // overlay automatisch na 5 min. Anders zou speler met 1 token oneindig
-        // kunnen blijven hangen.
-        sessionTimer = window.setTimeout(() => closeOverlay(0), MAX_SESSION_MS);
-
-        applyTaltrekkersShellStyle(controllerRef.element);
     };
 
-    const launch = (mode: 'snake' | 'dragon') => {
-        const tokens = mode === 'snake' ? snakeTokens : 0;
-        if (tokens <= 0) return;
-
-        // Eerste keer Sneek geopend? Toon intro met besturing-uitleg.
-        // Token wordt PAS afgetrokken bij echte game-start (in handleIntroStart),
-        // anders zou "Later" klikken het token verspillen.
-        if (mode === 'snake' && !hasSeenSneekIntro()) {
-            setShowIntro(true);
-            return;
-        }
-        onSpend(mode);
-        openGame(mode);
-    };
-
-    const handleIntroStart = () => {
-        setShowIntro(false);
-        onSpend('snake');
-        openGame('snake');
-    };
-
-    const introModal = (
-        <SneekIntroModal
-            isOpen={showIntro}
-            onStart={handleIntroStart}
-            onClose={() => setShowIntro(false)}
-        />
-    );
+    const tokenLabel = `${snakeTokens} ${snakeTokens === 1 ? 'token' : 'tokens'}`;
+    const title = disabledReason
+        ? disabledReason
+        : snakeTokens > 0
+            ? `Speel Sneek, de woordentuin — je hebt ${tokenLabel}`
+            : `Nog geen Sneek-token — verdien er één met ${sneekShortHint()}`;
 
     if (variant === 'compact') {
         return (
-            <>
-                <button
-                    type="button"
-                    onClick={() => launch('snake')}
-                    disabled={snakeTokens <= 0}
-                    title={
-                        snakeTokens > 0
-                            ? `Speel Sneek — je hebt ${snakeTokens} ${snakeTokens === 1 ? 'token' : 'tokens'}`
-                            : 'Geen Sneek-tokens — verdien er één met een sessie van ≥ 90% (min. 10 vragen)'
-                    }
-                    style={
-                        snakeTokens > 0
-                            ? { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }
-                            : undefined
-                    }
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-emerald-400/40 text-white text-xs font-extrabold shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-emerald-900/20 hover:scale-105 active:scale-95 transition-transform"
-                >
-                    <span className="text-sm">🐍</span>
-                    <span>{snakeTokens}</span>
-                </button>
-                {introModal}
-            </>
+            <button
+                type="button"
+                onClick={open}
+                disabled={!canPlay || opening}
+                title={title}
+                aria-label={title}
+                style={canPlay ? { background: 'linear-gradient(135deg, #2D7A7B 0%, #1f5f60 100%)' } : undefined}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-teal-300/40 text-white text-xs font-extrabold shadow-md disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-500/30 enabled:hover:scale-105 enabled:active:scale-95 transition-transform"
+            >
+                <span className="text-sm" aria-hidden="true">🐍</span>
+                <span>{snakeTokens}</span>
+            </button>
         );
     }
 
-    // Inline variant — één centraal-uitnodigende Sneek-kaart (geen 2-kolom grid meer)
-    // Vol-opaque gradient i.p.v. transparant: op witte SessionSummary scherm was de
-    // tekst onleesbaar door doorprikkende achtergrond.
+    const wordCount = launch.words.length;
+    const hardCount = launch.words.filter(w => w.priority).length;
+    const minutes = Math.round(SNEEK_RULES.visitSeconds / 60);
+
     return (
-        <>
-            <button
-                type="button"
-                onClick={() => launch('snake')}
-                disabled={snakeTokens <= 0}
-                className="group relative overflow-hidden rounded-2xl p-5 w-full border-2 border-emerald-500/40 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:scale-[1.01] enabled:hover:border-emerald-300 enabled:hover:shadow-xl enabled:hover:shadow-emerald-500/30 text-left shadow-md"
-                style={{ background: 'linear-gradient(135deg, #065f46 0%, #047857 50%, #0f766e 100%)' }}
-            >
-                <div className="absolute -top-6 -right-6 text-[6rem] opacity-25 group-enabled:group-hover:opacity-45 group-enabled:group-hover:rotate-12 transition-all">🐍</div>
-                <div className="relative z-10">
-                    <div
-                        className="text-2xl font-extrabold text-white mb-1"
-                        style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}
-                    >
-                        🐍 Sneek
+        <button
+            type="button"
+            onClick={open}
+            disabled={!canPlay || opening}
+            className="group relative overflow-hidden rounded-2xl p-5 w-full text-left border transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed enabled:hover:-translate-y-0.5 enabled:hover:shadow-xl shadow-md"
+            style={{ background: '#eee7da', borderColor: 'rgba(33,29,26,0.18)', color: '#211d1a' }}
+        >
+            <div className="flex items-start gap-4">
+                <div
+                    className="flex-shrink-0 w-14 h-14 rounded-full grid place-items-center text-3xl"
+                    style={{ background: '#2D7A7B', boxShadow: 'inset 0 0 0 3px rgba(255,255,255,0.25)' }}
+                    aria-hidden="true"
+                >
+                    🐍
+                </div>
+                <div className="min-w-0 flex-1">
+                    <div className="text-2xl font-bold leading-tight" style={{ fontFamily: "'Cormorant Garamond', Georgia, serif", fontStyle: 'italic' }}>
+                        Sneek — de woordentuin
                     </div>
-                    <p
-                        className="text-sm text-emerald-50 mb-3 leading-snug font-medium"
-                        style={{ textShadow: '0 1px 2px rgba(0,0,0,0.35)' }}
-                    >
-                        Een korte ontspanning als beloning voor een sterke sessie.
+                    <p className="text-sm mt-1 leading-snug" style={{ color: '#4c443b' }}>
+                        {wordCount > 0
+                            ? `Bouw de ${wordCount} woorden van deze les, letter voor letter${hardCount > 0 ? ` — de ${hardCount} moeilijke eerst` : ''}.`
+                            : 'Bouw schoolwoorden, letter voor letter.'}
                     </p>
-                    <div className="inline-flex items-center gap-2 bg-emerald-950/60 backdrop-blur px-3 py-1.5 rounded-full text-xs font-bold text-white border border-emerald-300/30">
-                        {snakeTokens > 0
-                            ? `${snakeTokens} ${snakeTokens === 1 ? 'token klaar om te spelen' : 'tokens klaar om te spelen'}`
-                            : 'Verdien een token: ≥ 90% in een sessie van min. 10 vragen'}
+                    <div className="flex flex-wrap items-center gap-2 mt-3 text-xs font-semibold">
+                        <span className="px-3 py-1 rounded-full text-white" style={{ background: canPlay ? '#2D7A7B' : '#6b6156' }}>
+                            {disabledReason ? disabledReason : snakeTokens > 0 ? `${tokenLabel} klaar` : 'Nog geen token'}
+                        </span>
+                        <span className="px-3 py-1 rounded-full" style={{ background: 'rgba(255,253,248,0.7)', border: '1px solid rgba(33,29,26,0.16)' }}>
+                            {SNEEK_RULES.rounds} rondes · {minutes} min
+                        </span>
+                        {launch.goldSnake && (
+                            <span className="px-3 py-1 rounded-full" style={{ background: '#fbf3dc', border: '1px solid rgba(180,139,59,0.5)' }}>
+                                ✨ gouden slang
+                            </span>
+                        )}
                     </div>
                 </div>
-            </button>
-            {introModal}
-        </>
+            </div>
+        </button>
     );
 };
 

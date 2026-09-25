@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { AppState, PracticeSettings } from './types';
 import { useUserData } from './hooks/useUserData';
 import { usePracticeSession } from './hooks/usePracticeSession';
@@ -7,6 +7,8 @@ import { useAchievements } from './hooks/useAchievements';
 import { useProfileStatsCloudSync } from './hooks/useProfileStatsCloudSync';
 import { useAuth } from './contexts/AuthContext';
 import { prepareResumeList } from './services/wordSelection';
+import { buildSneekLaunchData } from './services/sneek/launchData';
+import type { SneekResult } from './services/sneek/host';
 import Header from './components/Header';
 import WelcomeScreen from './components/WelcomeScreen';
 import Welcome from './components/Welcome';
@@ -164,6 +166,28 @@ const App: React.FC = () => {
   const activeUserData = activeUserName ? allUsersData[activeUserName] : undefined;
   const snakeTokens = activeUserData?.snakeTokens ?? 0;
   const dragonTokens = activeUserData?.dragonTokens ?? 0;
+
+  // Sneek: woorden van de net afgeronde sessie (of de laatste sessies), record en slang.
+  const sneekLaunch = useMemo(
+    () => buildSneekLaunchData(activeUserData, appState === AppState.SessionSummary ? sessionSummaryData : null),
+    [activeUserData, appState, sessionSummaryData],
+  );
+
+  // Record per leerling bewaren (beste ronde per modus).
+  const handleSneekResult = useCallback((result: SneekResult) => {
+    if (!activeUserName) return;
+    setUserData(activeUserName, prev => {
+      if (!prev) return prev as never;
+      const best = prev.sneekBest ?? { rustig: 0, uitdaging: 0 };
+      if (result.score <= (best[result.gameMode] ?? 0)) return prev;
+      return { ...prev, sneekBest: { ...best, [result.gameMode]: result.score } };
+    });
+  }, [activeUserName, setUserData]);
+
+  // Niet midden in een oefening of verhaal: eerst afwerken, dan spelen.
+  const sneekDisabledReason = appState === AppState.Practice || appState === AppState.Story
+    ? 'Werk eerst je oefening af'
+    : undefined;
 
   /**
    * "Volgende sessie uit deze lijst" — wordt aangeroepen vanuit SessionSummary.
@@ -336,6 +360,8 @@ const App: React.FC = () => {
               snakeTokens={snakeTokens}
               dragonTokens={dragonTokens}
               onSpendToken={handleSpendToken}
+              sneekLaunch={sneekLaunch}
+              onSneekResult={handleSneekResult}
               onContinueList={handleContinueListNav}
               listProgress={listProgress}
             />
@@ -367,6 +393,9 @@ const App: React.FC = () => {
         snakeTokens={snakeTokens}
         dragonTokens={dragonTokens}
         onSpendToken={handleSpendToken}
+        sneekLaunch={sneekLaunch}
+        onSneekResult={handleSneekResult}
+        sneekDisabledReason={sneekDisabledReason}
         points={headerPoints}
         streak={headerStreak}
         avatarEmoji={currentAvatar.emoji}

@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { SessionSummaryData } from '../types';
 import RewardLauncher from './RewardLauncher';
+import type { SneekLaunchData } from '../services/sneek/launchData';
+import type { SneekResult } from '../services/sneek/host';
+import { SNEEK_RULES, sneekProgress } from '../constants/sneek';
 
 const ScoreCircle: React.FC<{ score: number, total: number }> = ({ score, total }) => {
     const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
@@ -65,6 +68,9 @@ interface SessionSummaryProps {
     snakeTokens?: number;
     dragonTokens?: number;
     onSpendToken?: (mode: 'snake' | 'dragon') => void;
+    /** Woorden/record/slang voor Sneek, opgebouwd uit deze sessie. */
+    sneekLaunch?: SneekLaunchData;
+    onSneekResult?: (result: SneekResult) => void;
     /**
      * Optionele callback: "Volgende sessie uit deze lijst". Wordt aangeroepen
      * met de listId (= customFileName of context van de net-afgeronde sessie).
@@ -76,8 +82,8 @@ interface SessionSummaryProps {
     listProgress?: { total: number; practiced: number };
 }
 
-const SessionSummary: React.FC<SessionSummaryProps> = ({ summaryData, onClose, snakeTokens = 0, dragonTokens = 0, onSpendToken, onContinueList, listProgress }) => {
-    const { quizResults, earnedXP, weakWordsBonus, settings, earnedSnakeTokens = 0 } = summaryData;
+const SessionSummary: React.FC<SessionSummaryProps> = ({ summaryData, onClose, snakeTokens = 0, onSpendToken, sneekLaunch, onSneekResult, onContinueList, listProgress }) => {
+    const { quizResults, earnedXP, weakWordsBonus, settings, earnedSnakeTokens = 0, tokenCapReached = false } = summaryData;
     // ListId = customFileName voor opgeladen lijsten, of context voor algemene lijsten
     const listId = settings?.customFileName || settings?.context || null;
     const canContinueList = !!onContinueList && !!listId && !!listProgress && listProgress.total > 0;
@@ -88,7 +94,9 @@ const SessionSummary: React.FC<SessionSummaryProps> = ({ summaryData, onClose, s
     // Toon de reward-sectie alleen als er minstens één token beschikbaar is.
     // Tokens worden in usePracticeSession.finishPractice toegekend, dus tegen de tijd dat we hier
     // renderen zit de net-verdiende token er al in.
-    const showRewardSection = onSpendToken && (snakeTokens > 0 || dragonTokens > 0);
+    const showRewardSection = !!onSpendToken && !!sneekLaunch && snakeTokens > 0;
+    // "Bijna"-boodschap als er deze keer geen token bij kwam.
+    const progress = sneekProgress(correctCount, totalCount, !!weakWordsBonus);
     // Onderscheid: net verdiend in DEZE sessie vs. accumulatief uit eerdere sessies.
     // Bepaalt of we "🎁 Beloning vrijgespeeld!" of "🎮 Je hebt nog X tokens klaar" tonen.
     const justEarnedToken = earnedSnakeTokens > 0;
@@ -108,7 +116,7 @@ const SessionSummary: React.FC<SessionSummaryProps> = ({ summaryData, onClose, s
             </div>
 
             {/* Prominent XP Earned Display */}
-            {earnedXP && earnedXP > 0 && (
+            {!!earnedXP && earnedXP > 0 && (
                 <div className="flex flex-col items-center gap-2 mb-6 relative z-20">
                     <div
                         className="text-white px-6 py-3 rounded-full shadow-lg animate-bounce-in flex items-center gap-2"
@@ -157,17 +165,29 @@ const SessionSummary: React.FC<SessionSummaryProps> = ({ summaryData, onClose, s
                             </h3>
                             <p className="text-xs text-white/70">
                                 {justEarnedToken
-                                    ? `Top sessie — je verdiende een nieuwe Sneek-token!`
-                                    : 'Speel ze hieronder af, of klik later op de 🐍 chip in de header.'}
+                                    ? 'Top sessie — je verdiende een nieuw Sneek-token!'
+                                    : tokenCapReached
+                                        ? `Je spaarpot is vol (${SNEEK_RULES.maxTokens} tokens). Speel er eerst één op.`
+                                        : 'Speel nu, of later via de 🐍 chip bovenaan.'}
                             </p>
                         </div>
                     </div>
                     <RewardLauncher
                         snakeTokens={snakeTokens}
-                        dragonTokens={dragonTokens}
                         onSpend={onSpendToken!}
+                        launch={sneekLaunch!}
+                        onResult={onSneekResult}
                     />
                 </div>
+            )}
+
+            {/* Geen token deze keer: toon hoe dichtbij het was. */}
+            {!justEarnedToken && !tokenCapReached && totalCount > 0 && (
+                <p className="relative z-20 my-4 text-center text-sm font-medium text-slate-600">
+                    🐍 {progress.tooShort
+                        ? `Een sessie van minstens ${progress.minQuestions} vragen kan een Sneek-token opleveren.`
+                        : `Nog ${progress.missingCorrect} ${progress.missingCorrect === 1 ? 'juist antwoord' : 'juiste antwoorden'} en je had een Sneek-token verdiend.`}
+                </p>
             )}
 
             <div className="relative z-20">

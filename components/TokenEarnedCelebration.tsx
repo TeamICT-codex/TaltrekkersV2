@@ -132,12 +132,12 @@ const TokenEarnedCelebration: React.FC<TokenEarnedCelebrationProps> = ({ show, o
                             <>
                                 Leuk dat je TALent voor Taal komt ontdekken!
                                 Je krijgt <span className="font-bold">1 Sneek-token</span> cadeau —
-                                klik op de <span className="font-bold">🐍 chip</span> bovenaan om de mini-game uit te proberen.
+                                klik op de <span className="font-bold">🐍 chip</span> bovenaan om de woordentuin uit te proberen.
                             </>
                         ) : (
                             <>
-                                Sterke sessie! Klik op de <span className="font-bold">🐍 chip</span> in de header
-                                om je beloning op te eten.
+                                Sterke sessie! Bouw de woorden van deze les in de woordentuin —
+                                onderaan deze pagina of via de <span className="font-bold">🐍 chip</span> bovenaan.
                             </>
                         )}
                     </p>

@@ -20,6 +20,12 @@ export default defineConfig({
       // van 256 KB uit. Als 'external' wordt hij helemaal niet meer gebundeld.
       // scripts/check-bundle.mjs bewaakt dit bij elke build.
       external: ['@google/genai'],
+      // Twee pagina's: de app en Sneek (het spel draait in een eigen pagina in
+      // een overlay-iframe, zonder React — zo blijft de app-bundel even klein).
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        sneek: path.resolve(__dirname, 'sneek.html'),
+      },
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom'],

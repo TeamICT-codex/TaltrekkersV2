@@ -6,6 +6,8 @@ import { CheckIcon } from './icons/CheckIcon';
 import FeedbackButton from './FeedbackButton';
 import FeedbackViewer from './FeedbackViewer';
 import RewardLauncher from './RewardLauncher';
+import type { SneekLaunchData } from '../services/sneek/launchData';
+import type { SneekResult } from '../services/sneek/host';
 import KlasSettingsModal from './KlasSettingsModal';
 import TeacherUpgradeModal from './TeacherUpgradeModal';
 import GameSettingsModal from './GameSettingsModal';
@@ -25,6 +27,11 @@ interface HeaderProps {
   snakeTokens?: number;
   dragonTokens?: number;
   onSpendToken?: (mode: 'snake' | 'dragon') => void;
+  /** Woorden/record/slang voor Sneek (vanuit App.tsx). */
+  sneekLaunch?: SneekLaunchData;
+  onSneekResult?: (result: SneekResult) => void;
+  /** Sneek tijdelijk niet te openen (bv. tijdens een oefening), met uitleg. */
+  sneekDisabledReason?: string;
   // Profielinfo voor de avatar-chip en stats — vanuit App.tsx via useUserData.
   points?: number;
   streak?: number;
@@ -35,7 +42,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({
   onLogoClick, onShowLogin, onShowTeacherDashboard,
-  snakeTokens = 0, dragonTokens = 0, onSpendToken,
+  snakeTokens = 0, dragonTokens = 0, onSpendToken, sneekLaunch, onSneekResult, sneekDisabledReason,
   points = 0, streak = 0, avatarEmoji = '👤', avatarName, onShowAvatarSelector,
 }) => {
   const { theme, setTheme } = useTheme();
@@ -188,11 +195,13 @@ const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Reward tokens — compact badges, alleen als er een actieve user/oefenaar is met tokens of een spendcallback */}
-          {onSpendToken && (snakeTokens > 0 || dragonTokens > 0) && (
+          {onSpendToken && sneekLaunch && snakeTokens > 0 && (
             <RewardLauncher
               snakeTokens={snakeTokens}
-              dragonTokens={dragonTokens}
               onSpend={onSpendToken}
+              launch={sneekLaunch}
+              onResult={onSneekResult}
+              disabledReason={sneekDisabledReason}
               variant="compact"
             />
           )}
