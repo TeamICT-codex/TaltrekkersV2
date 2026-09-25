@@ -76,6 +76,7 @@ export const MARKUP = `
 <!-- ============ MENU ============ -->
 <div class="sn-overlay show" id="snMenu" role="dialog" aria-modal="true" aria-labelledby="snMenuTitle">
   <div class="sn-card">
+    <button type="button" class="sn-menu-close" id="snMenuClose" aria-label="Terug naar de les" hidden>${ICON.close}<span aria-hidden="true">Terug</span></button>
     <div class="sn-hero">
       <canvas id="snEnsoBig" width="400" height="400" aria-hidden="true"></canvas>
       <h1 id="snMenuTitle">Sneek</h1>

@@ -1,6 +1,6 @@
 // Berichtenprotocol tussen de host-app (TALent voor Taal) en de Sneek-iframe.
 //
-// Compatibel met services/reward/embed.ts:
+// Host-kant: services/sneek/host.ts
 //   host → game : sessionStorage['hlc-reward-session-<id>'] + postMessage 'hlc-reward-config'
 //   game → host : 'hlc-reward-ready' | 'hlc-reward-started' | 'hlc-reward-complete' | 'hlc-reward-close'
 //

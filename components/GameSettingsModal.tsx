@@ -6,6 +6,7 @@ import {
     GameTheme,
 } from '../services/db';
 import { refreshGameSettings } from '../hooks/useGameSettings';
+import { sneekDefaultAdminText } from '../constants/sneek';
 
 interface GameSettingsModalProps {
     isOpen: boolean;
@@ -13,15 +14,16 @@ interface GameSettingsModalProps {
 }
 
 const THEME_OPTIONS: Array<{ id: GameTheme; label: string; emoji: string }> = [
-    { id: 'aurora',   label: 'Aurora — koel groen/blauw',   emoji: '🌌' },
-    { id: 'ember',    label: 'Ember — warm oranje/rood',    emoji: '🔥' },
-    { id: 'forest',   label: 'Forest — diep groen',         emoji: '🌲' },
-    { id: 'midnight', label: 'Midnight — donkere paars',    emoji: '🌃' },
-    { id: 'sunrise',  label: 'Sunrise — zacht roze/geel',   emoji: '🌅' },
+    { id: 'aurora',   label: 'TALent-teal (standaard)', emoji: '🌿' },
+    { id: 'ember',    label: 'Vermiljoen',              emoji: '🔴' },
+    { id: 'forest',   label: 'Mos',                     emoji: '🌲' },
+    { id: 'midnight', label: 'Indigo',                  emoji: '🌌' },
+    { id: 'sunrise',  label: 'Bloesem',                 emoji: '🌸' },
 ];
 
-const DEFAULT_SNAKE_TEXT =
-    'Een korte ontspanning na goed werk!\n\nJe verdient een Sneek-token bij elke sessie waar je ≥ 80% goed scoort. Wissel het in voor een rondje slangetje vangen — even het hoofd leegmaken voor je verder oefent.';
+// Het spel toont deze tekst in zijn menu (max. 280 tekens, één alinea).
+const SNAKE_TEXT_MAX = 280;
+const DEFAULT_SNAKE_TEXT = sneekDefaultAdminText();
 
 const DEFAULT_DRAGON_TEXT =
     'Een grotere mijlpaal-beloning.\n\nElke 100 XP die je verdient levert een Droak-token op. Speel ermee om de woordendraak los te laten — een visuele beloning voor je werk.';
@@ -105,8 +107,8 @@ const GameSettingsModal: React.FC<GameSettingsModalProps> = ({ isOpen, onClose }
 
                 <div className="p-6 space-y-6">
                     <p className="text-sm text-muted">
-                        Pas de tekst en het kleurthema aan voor de Sneek en Droak beloningsgames.
-                        Wijzigingen zijn meteen actief — geen rebuild nodig.
+                        Pas de tekst en de accentkleur van Sneek (de woordentuin) aan.
+                        Wijzigingen zijn meteen actief — geen rebuild nodig. Droak is voorlopig niet speelbaar.
                     </p>
 
                     {/* SNEEK sectie */}
@@ -125,19 +127,19 @@ const GameSettingsModal: React.FC<GameSettingsModalProps> = ({ isOpen, onClose }
                             </button>
                         </div>
 
-                        <label className="block text-xs font-semibold mb-1 uppercase tracking-wider">Tekst in game</label>
+                        <label className="block text-xs font-semibold mb-1 uppercase tracking-wider">Tekst in het menu van het spel</label>
                         <textarea
                             value={snakeText}
                             onChange={(e) => setSnakeText(e.target.value)}
                             disabled={loading}
                             rows={4}
                             placeholder={DEFAULT_SNAKE_TEXT}
-                            maxLength={2000}
+                            maxLength={SNAKE_TEXT_MAX}
                             className="w-full px-3 py-2 border border-themed rounded-lg focus:outline-none focus:ring-2 focus:ring-tal-purple bg-surface text-sm resize-y"
                         />
-                        <p className="text-[10px] text-muted mt-0.5">{snakeText.length} / 2000 tekens</p>
+                        <p className="text-[10px] text-muted mt-0.5">{snakeText.length} / {SNAKE_TEXT_MAX} tekens</p>
 
-                        <label className="block text-xs font-semibold mt-3 mb-1 uppercase tracking-wider">Kleurthema</label>
+                        <label className="block text-xs font-semibold mt-3 mb-1 uppercase tracking-wider">Accentkleur</label>
                         <select
                             value={snakeTheme}
                             onChange={(e) => setSnakeTheme(e.target.value as GameTheme)}

@@ -95,12 +95,12 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     next: el('snNext'), endVisit: el('snEndVisit'),
     doneOv: el('snDoneOv'), doneBest: el('snDoneBest'), ensoDone: el<HTMLCanvasElement>('snEnsoDone'), doneSub: el('snDoneSub'),
     dBest: el('snDBest'), dRecord: el('snDRecord'), dWords: el('snDWords'), dLetters: el('snDLetters'), dList: el('snDList'), dWordsH: el('snDWordsH'), dEmpty: el('snDEmpty'),
-    doneBtn: el('snDoneBtn'), earnHint: el('snEarnHint'),
+    doneBtn: el('snDoneBtn'), earnHint: el('snEarnHint'), menuClose: el('snMenuClose'),
     tools: document.querySelector<HTMLElement>('#snHud .sn-tools') ?? el('snHud'),
   };
 
   if (TOUCH) document.documentElement.classList.add('touch');
-  if (embedded) $.btnClose.hidden = false;
+  if (embedded) { $.btnClose.hidden = false; $.menuClose.hidden = false; }
 
   // ─── Records & modus ──────────────────────────────────────
   const readBest = (): Best => {
@@ -555,12 +555,14 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
 
   window.addEventListener('keydown', e => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    const t = e.target as HTMLElement | null;
-    if (t && t.closest && t.closest('input, textarea, select, .sn-demo')) return;
+    // Doorgestuurde toetsen van de app hebben het venster als doel, geen element.
+    const t = e.target instanceof Element ? (e.target as HTMLElement) : null;
+    if (t && t.closest('input, textarea, select, .sn-demo')) return;
     const k = e.key;
     if (k === 'm' || k === 'M') { toggleSound(); return; }
 
     if (overlay === 'menu') {
+      if (k === 'Escape' && embedded) { e.preventDefault(); closeGame(); return; }
       if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'a' || k === 'A' || k === 'q' || k === 'Q' || k === 'd' || k === 'D') {
         e.preventDefault();
         setMode(mode === 'rustig' ? 'uitdaging' : 'rustig', true);
@@ -606,7 +608,7 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
 
   let touch0: { x: number; y: number } | null = null;
   document.addEventListener('touchstart', e => {
-    const t = e.target as HTMLElement | null;
+    const t = e.target instanceof Element ? (e.target as HTMLElement) : null;
     if (overlay || (t && t.closest('button, .sn-demo'))) { touch0 = null; return; }
     const p = e.changedTouches[0];
     touch0 = { x: p.clientX, y: p.clientY };
@@ -636,6 +638,7 @@ export function bootSneek(opts: BootOptions = {}): SneekApi {
     setMode(b.dataset.mode === 'uitdaging' ? 'uitdaging' : 'rustig', true);
   }));
   $.start.addEventListener('click', () => beginVisit());
+  $.menuClose.addEventListener('click', () => { if (overlay === 'menu') closeGame(); });
   $.next.addEventListener('click', () => nextRound());
   $.endVisit.addEventListener('click', () => { if (overlay === 'round') endVisit(); });
   $.resume.addEventListener('click', () => togglePause());
