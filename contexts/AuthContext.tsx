@@ -5,8 +5,10 @@ import { updateProfileKlas, updateProfileKlasInfo, updateProfileNativeLanguage, 
 import { Finaliteit, Jaargang } from '../types';
 import { User, Session } from '@supabase/supabase-js';
 
-const TEACHER_PENDING_KEY = 'taltrekkers_teacher_pending';
-const NAME_PENDING_KEY = 'taltrekkers_pending_name';
+// Verouderde sleutels van een vroegere flow. Ze werden nergens meer gezet, maar
+// wie ze zelf in localStorage zette kon zo zijn rol of naam laten aanpassen.
+// We lezen ze niet meer; bij uitloggen ruimen we eventuele restjes op.
+const LEGACY_KEYS = ['taltrekkers_teacher_pending', 'taltrekkers_pending_name'];
 export const SELECTED_STUDENT_KEY = 'taltrekkers_selected_student';
 
 // Toegestane email-domeinen voor zowel magic-link als Microsoft OAuth.
@@ -143,39 +145,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             isProcessingRef.current = true;
 
             try {
-                const pendingTeacherEmail = localStorage.getItem(TEACHER_PENDING_KEY);
-                const userEmail = currentUser.email?.toLowerCase();
-
-                // Check of dit een teacher upgrade is
-                if (pendingTeacherEmail && userEmail === pendingTeacherEmail) {
-                    localStorage.removeItem(TEACHER_PENDING_KEY);
-
-                    const { error: updateError } = await supabase
-                        .from('profiles')
-                        .update({ role: 'teacher' })
-                        .eq('id', currentUser.id)
-                        .select();
-
-                    if (!updateError) {
-                        setRole('teacher');
-                    }
-                }
-
-                // Check of er een pending name is om op te slaan
-                const pendingName = localStorage.getItem(NAME_PENDING_KEY);
-                if (pendingName) {
-                    localStorage.removeItem(NAME_PENDING_KEY);
-
-                    const { error: nameError } = await supabase
-                        .from('profiles')
-                        .update({ full_name: pendingName })
-                        .eq('id', currentUser.id);
-
-                    if (nameError) {
-                        console.error('Fout bij opslaan naam:', nameError);
-                    }
-                }
-
+                // Rol en naam worden NOOIT vanuit de browser gezet. Leerkracht worden
+                // kan enkel via de server-side RPC upgrade_to_teacher (leerkrachtcode).
                 const { data: profile } = await supabase
                     .from('profiles')
                     .select('role, full_name, klas, finaliteit, jaargang, native_language')
@@ -300,23 +271,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 const allowed = await enforceEmailDomain(session.user);
                 if (!allowed) { setLoading(false); return; }
 
-                const pending = localStorage.getItem(TEACHER_PENDING_KEY);
-                if (pending) {
-                    processUserProfile(session.user);
-                } else {
-                    supabase
-                        .from('profiles')
-                        .select('role, klas, finaliteit, jaargang, native_language')
-                        .eq('id', session.user.id)
-                        .single()
-                        .then(({ data }) => {
-                            setRole(data?.role || 'student');
-                            setKlasState(data?.klas ?? null);
-                            setFinaliteitState((data?.finaliteit as Finaliteit | null) ?? null);
-                            setJaargangState((data?.jaargang as Jaargang | null) ?? null);
-                            setNativeLanguageState(data?.native_language ?? null);
-                        });
-                }
+                supabase
+                    .from('profiles')
+                    .select('role, klas, finaliteit, jaargang, native_language')
+                    .eq('id', session.user.id)
+                    .single()
+                    .then(({ data }) => {
+                        setRole(data?.role || 'student');
+                        setKlasState(data?.klas ?? null);
+                        setFinaliteitState((data?.finaliteit as Finaliteit | null) ?? null);
+                        setJaargangState((data?.jaargang as Jaargang | null) ?? null);
+                        setNativeLanguageState(data?.native_language ?? null);
+                    });
             }
             setLoading(false);
         });
@@ -414,8 +380,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }, [clearAuthError]);
 
     const signOut = useCallback(async () => {
-        localStorage.removeItem(TEACHER_PENDING_KEY);
-        localStorage.removeItem(NAME_PENDING_KEY);
+        LEGACY_KEYS.forEach(k => localStorage.removeItem(k));
         clearSelectedStudent();
         setKlasState(null);
         setFinaliteitState(null);

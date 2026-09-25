@@ -32,13 +32,19 @@
 -- SECURITY DEFINER + owner = postgres → de SELECT inside deze
 -- functie bypasst RLS, dus geen recursion wanneer policies
 -- hem aanroepen.
+-- Bijgewerkt 2026-09-24: admins tellen mee (anders sloot heruitvoeren van dit
+-- bestand de admins uit het leerkrachtoverzicht). Zelfde als in
+-- migration-2026-09-24-beveiliging-rollen.sql.
 CREATE OR REPLACE FUNCTION public.is_teacher()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE sql SECURITY DEFINER STABLE
+SET search_path = public
+AS $$
     SELECT EXISTS (
         SELECT 1 FROM public.profiles
-        WHERE id = auth.uid() AND role = 'teacher'
+        WHERE id = auth.uid() AND role IN ('teacher', 'admin')
     );
-$$ LANGUAGE SQL SECURITY DEFINER STABLE;
+$$;
 
 GRANT EXECUTE ON FUNCTION public.is_teacher() TO authenticated;
 
@@ -61,10 +67,13 @@ USING (public.is_teacher());
 -- =====================================================
 -- STAP 4: feedback teacher policy
 -- =====================================================
+-- Bijgewerkt 2026-09-24: het feedback-overzicht is enkel voor admins
+-- (zie migration-2026-05-21-admin-role.sql).
 DROP POLICY IF EXISTS "Teachers can view all feedback" ON public.feedback;
-CREATE POLICY "Teachers can view all feedback"
+DROP POLICY IF EXISTS "Admins can view all feedback" ON public.feedback;
+CREATE POLICY "Admins can view all feedback"
 ON public.feedback FOR SELECT
-USING (public.is_teacher());
+USING (public.is_admin());
 
 -- =====================================================
 -- STAP 5: registered_students teacher policies

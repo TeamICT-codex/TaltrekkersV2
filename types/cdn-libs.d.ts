@@ -28,7 +28,7 @@ interface PdfLoadingTask {
 }
 
 declare const pdfjsLib: {
-    getDocument(src: string): PdfLoadingTask;
+    getDocument(src: string | { url?: string; data?: ArrayBuffer | Uint8Array; isEvalSupported?: boolean }): PdfLoadingTask;
 };
 
 // ---------------------------------------------------------------------------
