@@ -317,6 +317,8 @@ GRANT EXECUTE ON FUNCTION public.upsert_word_progress(UUID, TEXT, TEXT[]) TO aut
 -- STAP 6: Klaslijst enkel voor leerkrachten
 -- =====================================================
 DROP POLICY IF EXISTS "Anyone can read registered students" ON public.registered_students;
+-- In productie bestond dezelfde open regel onder een andere naam.
+DROP POLICY IF EXISTS "Anyone can view registered students" ON public.registered_students;
 DROP POLICY IF EXISTS "Teachers can read registered students" ON public.registered_students;
 CREATE POLICY "Teachers can read registered students"
 ON public.registered_students FOR SELECT
