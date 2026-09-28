@@ -19,8 +19,13 @@
  *     Daarom staan de WordLevel-waarden hieronder als string-literals.
  *   - `data/curriculumVakken.ts` mag wél: dat bestand heeft zelf geen imports en
  *     bevat enkel interfaces, consts en functies.
- *   - Elke import van deze module gebruikt de expliciete `.ts`-extensie. Vite,
- *     de esbuild-bundelaar van Vercel én Node type-stripping aanvaarden dat alle drie.
+ *   - Elke import van deze module gebruikt de expliciete `.ts`-extensie. Vite en
+ *     Node type-stripping aanvaarden dat rechtstreeks. Vercel BUNDELT de proxy
+ *     niet: het compileert elk .ts-bestand apart naar .js. Daarom staat
+ *     `rewriteRelativeImportExtensions` aan in tsconfig.json — dan wordt
+ *     '../shared/frayerPrompt.ts' in de gecompileerde proxy '../shared/frayerPrompt.js'.
+ *     Zonder die optie faalt de hele proxy op Vercel met ERR_MODULE_NOT_FOUND
+ *     (nagespeeld met de echte @vercel/node-builder: scripts/check-vercel-functie.mjs).
  */
 
 import type { FrayerModelData } from '../types.ts';
@@ -227,29 +232,45 @@ export interface FrayerRequest {
 /** Stuurgetallen voor de normalisatie. */
 const MAX_WORD_LENGTH = 60;
 const MAX_CONTEXT_LENGTH = 80;
-const MAX_DIFFICULTY_LENGTH = 30;
 
 /** Stuurtekens (incl. \n, \r en \t) — verboden, ze breken de promptstructuur. */
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
+
+/** Scheidingsteken in de cache-sleutel. Mag niet in het woord (zie frayerCacheKey). */
+const KEY_SEPARATOR = '|';
+
+/** De enige niveaus waarvoor getDifficultyInstruction een eigen instructie heeft. */
+const CANONICAL_DIFFICULTIES = [WORD_LEVEL_BEGINNER, WORD_LEVEL_INTERMEDIATE, WORD_LEVEL_ADVANCED];
 
 /**
  * Maakt van ruwe invoer (uit `req.body` of uit de app) een schone FrayerRequest,
  * of null als de invoer niet deugt.
  *
  * Dit is de poortwachter van de gedeelde cache: alles wat hier doorkomt bepaalt
- * de cache-sleutel én de prompt die de server bouwt. Daarom streng:
+ * de cache-sleutel én de prompt die de server bouwt. Het resultaat is CANONIEK:
+ * twee aanvragen met dezelfde cache-sleutel geven exact dezelfde prompt, zodat
+ * niemand met een andere schrijfwijze een zwakkere versie kan vastleggen.
  *   - word       : string, getrimd, interne witruimte samengetrokken tot één
- *                  spatie, 1..60 tekens, geen stuurtekens/nieuwe regels.
+ *                  spatie, in kleine letters, 1..60 tekens, geen stuurtekens/
+ *                  nieuwe regels en geen '|'.
  *   - context    : string of afwezig → '', getrimd, afgekapt op 80 tekens,
- *                  geen stuurtekens.
- *   - difficulty : string of afwezig → '', getrimd, afgekapt op 30 tekens,
- *                  geen stuurtekens.
+ *                  geen stuurtekens. Verder EXACT: een andere schrijfwijze van het
+ *                  vak geeft ook een andere prompt, dus een eigen sleutel.
+ *   - difficulty : 'Beginner', 'Gemiddeld' of 'Gevorderd' (hoofdletterongevoelig
+ *                  herkend) → die exacte waarde; al de rest (ook leeg, onbekend of
+ *                  geen tekst) → ''. getDifficultyInstruction geeft voor '' dezelfde
+ *                  B1-instructie als voor elke onbekende waarde: de prompt blijft gelijk.
  *
- * Afkappen (i.p.v. weigeren) voor context/difficulty is bewust: die waarden komen
- * uit vaste lijsten (langste vak-id is 25 tekens, langste richting-code 41), dus
- * afkappen kan in de praktijk nooit gebeuren, maar een te lange waarde mag ook
- * nooit een leerling blokkeren. Het woord weigeren we wél: dat is de eigenlijke
- * invoer en een fout woord hoort een duidelijke foutmelding te geven.
+ * Kleine letters voor het woord: zo delen "Factuur" en "factuur" één cache-rij én
+ * één prompt. Alle woordbronnen van de app en van 2.0 (vaste lijsten,
+ * extractKeyTerms) leveren al kleine letters, dus in de praktijk verandert er geen
+ * enkele prompt.
+ *
+ * Afkappen (i.p.v. weigeren) voor de context is bewust: vakken uit de vaste lijsten
+ * zijn kort (langste vak-id 25 tekens, langste richting-code 41), maar een eigen vak
+ * of lijstnaam is vrije tekst en mag een leerling nooit blokkeren. Het woord
+ * weigeren we wél: dat is de eigenlijke invoer. (De app valt dan terug op een
+ * gewone prompt zonder cache, zie generateFrayerModel.)
  */
 export function normalizeFrayerRequest(input: unknown): FrayerRequest | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
@@ -257,35 +278,45 @@ export function normalizeFrayerRequest(input: unknown): FrayerRequest | null {
 
   if (typeof raw.word !== 'string') return null;
   const trimmedWord = raw.word.trim();
-  if (CONTROL_CHARS.test(trimmedWord)) return null;
-  const word = trimmedWord.replace(/\s+/g, ' ');
+  if (CONTROL_CHARS.test(trimmedWord) || trimmedWord.includes(KEY_SEPARATOR)) return null;
+  const word = trimmedWord.replace(/\s+/g, ' ').toLowerCase();
   if (word.length < 1 || word.length > MAX_WORD_LENGTH) return null;
 
-  const context = normalizeSideValue(raw.context, MAX_CONTEXT_LENGTH);
+  const context = normalizeContext(raw.context);
   if (context === null) return null;
 
-  const difficulty = normalizeSideValue(raw.difficulty, MAX_DIFFICULTY_LENGTH);
-  if (difficulty === null) return null;
-
-  return { word, context, difficulty };
+  return { word, context, difficulty: canonicalDifficulty(raw.difficulty) };
 }
 
-/** Helper voor context/difficulty: afwezig → '', trimmen, afkappen, stuurtekens weigeren. */
-function normalizeSideValue(value: unknown, maxLength: number): string | null {
+/** Context: afwezig → '', trimmen, afkappen, stuurtekens weigeren. Verder exact. */
+function normalizeContext(value: unknown): string | null {
   if (value === undefined || value === null) return '';
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (CONTROL_CHARS.test(trimmed)) return null;
-  return trimmed.slice(0, maxLength);
+  return trimmed.slice(0, MAX_CONTEXT_LENGTH);
+}
+
+/** Niveau: één van de drie canonieke waarden, of '' voor al de rest. */
+function canonicalDifficulty(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const gezocht = value.trim().toLowerCase();
+  return CANONICAL_DIFFICULTIES.find(niveau => niveau.toLowerCase() === gezocht) ?? '';
 }
 
 /**
- * De primaire sleutel in `frayer_cache`. Kleine letters, zodat "Factuur" en
- * "factuur" hetzelfde antwoord delen. De "v<nummer>"-prefix zorgt dat een
- * promptwijziging (FRAYER_PROMPT_VERSION++) oude rijen automatisch links laat liggen.
+ * De primaire sleutel in `frayer_cache`, voor een GENORMALISEERDE aanvraag.
+ *
+ * Enkel het woord staat in kleine letters (normalizeFrayerRequest deed dat al);
+ * vak en niveau staan er exact in, zoals ze in de prompt terechtkomen. Zo hoort bij
+ * elke sleutel precies één prompt. Omdat het woord geen '|' mag bevatten en het
+ * niveau er nooit een heeft, valt de sleutel eenduidig terug te splitsen: woord tot
+ * de eerste '|', niveau na de laatste, vak ertussen (dat mag zelf '|' bevatten).
+ * De "v<nummer>"-prefix zorgt dat een promptwijziging (FRAYER_PROMPT_VERSION++)
+ * oude rijen automatisch links laat liggen.
  */
 export function frayerCacheKey(r: FrayerRequest): string {
-  return `v${FRAYER_PROMPT_VERSION}|${r.word.toLowerCase()}|${r.context.toLowerCase()}|${r.difficulty.toLowerCase()}`;
+  return `v${FRAYER_PROMPT_VERSION}|${r.word.toLowerCase()}|${r.context}|${r.difficulty}`;
 }
 
 /**

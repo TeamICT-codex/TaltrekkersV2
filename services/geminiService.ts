@@ -1,14 +1,29 @@
 
-import { FrayerModelData, StoryData, WordLevel, PracticeSettings, QuizQuestion, SessionRecord, QuestionType } from '../types';
+import { FrayerModelData, StoryData, PracticeSettings, QuizQuestion, SessionRecord, QuestionType } from '../types';
 import { supabase } from './supabase';
 import { logAiUsage, type AiUsageMetadata } from './aiUsage';
-import { getVakDomainMap } from '../data/curriculumVakken';
+// Promptopbouw, schema's en modelnamen die de proxy (api/gemini.ts) ook gebruikt.
+// Eén bron, zodat browser en server byte-voor-byte dezelfde Frayer-prompt maken.
+import {
+  FRAYER_GENERATION_CONFIG,
+  GEMINI_TEXT_MODEL,
+  GEMINI_TTS_MODEL,
+  buildFrayerPrompt,
+  buildSubjectGuidance,
+  cleanJsonOutput,
+  frayerModelSchema,
+  getContextInstruction,
+  getDifficultyInstruction,
+  normalizeFrayerRequest,
+  type FrayerRequest,
+} from '../shared/frayerPrompt.ts';
 
 // --- PROXY / SDK HELPER ---
 
 interface GeminiProxyRequest {
   model: string;
-  contents: string | unknown[];
+  /** Vrije prompt. Niet nodig bij `frayer`: dan bouwt de proxy de prompt zelf. */
+  contents?: string | unknown[];
   config?: Record<string, unknown>;
   /**
    * Kort label van de app-functie die deze call doet ('quiz', 'frayer', 'tts', ...).
@@ -17,6 +32,11 @@ interface GeminiProxyRequest {
    * nieuwe call-site niet per ongeluk als 'onbekend' eindigt.
    */
   feature: string;
+  /**
+   * Frayer-model: enkel woord, vak en niveau. De proxy bouwt hiermee zelf de
+   * prompt en kan het antwoord zo veilig delen via de gedeelde cache (frayer_cache).
+   */
+  frayer?: FrayerRequest;
 }
 
 interface GeminiProxyResponse {
@@ -25,8 +45,10 @@ interface GeminiProxyResponse {
   error?: string;
   /** Tokenverbruik van deze call — door de proxy of de SDK meegegeven. */
   usage?: AiUsageMetadata | null;
-  /** Het model dat Google écht gebruikte (de alias kan verschuiven). */
+  /** Het model dat Google écht gebruikte. */
   modelVersion?: string | null;
+  /** true = het Frayer-model kwam uit de gedeelde cache (geen Gemini-call). */
+  cached?: boolean;
 }
 
 /**
@@ -34,7 +56,9 @@ interface GeminiProxyResponse {
  * nooit in de browser terechtkomt.
  *
  * Lokale development (`npm run dev`): gebruikt de @google/genai SDK direct met
- * VITE_GEMINI_API_KEY uit .env.local.
+ * VITE_GEMINI_API_KEY uit .env.local. Met VITE_USE_PROXY=1 gaat ook dev via
+ * /api/gemini (Vite stuurt dat door naar `npm run dev:api` op poort 3001) —
+ * zo test je de echte proxy, inclusief de Frayer-cache.
  *
  * BELANGRIJK — waarom dit ENKEL op `import.meta.env.DEV` hangt en niet (meer)
  * op de hostname: Vite vervangt `import.meta.env.VITE_GEMINI_API_KEY` bij het
@@ -87,11 +111,18 @@ async function callGeminiDirect(params: GeminiProxyRequest): Promise<GeminiProxy
   const { GoogleGenAI } = await import('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
 
-  const response = await ai.models.generateContent({
-    model: params.model,
-    contents: params.contents as string,
-    config: params.config,
-  });
+  // Frayer: exact dezelfde prompt, hetzelfde model en dezelfde config als de proxy.
+  const response = params.frayer
+    ? await ai.models.generateContent({
+        model: GEMINI_TEXT_MODEL,
+        contents: buildFrayerPrompt(params.frayer),
+        config: { ...FRAYER_GENERATION_CONFIG } as Record<string, unknown>,
+      })
+    : await ai.models.generateContent({
+        model: params.model,
+        contents: params.contents as string,
+        config: params.config,
+      });
 
   const usage = response.usageMetadata ?? null;
   const modelVersion = (response as { modelVersion?: string }).modelVersion ?? null;
@@ -120,19 +151,21 @@ async function callGemini(params: GeminiProxyRequest): Promise<GeminiProxyRespon
   const startedAt = Date.now();
   try {
     let result: GeminiProxyResponse;
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && import.meta.env.VITE_USE_PROXY !== '1') {
       // Dev: rechtstreeks via de SDK. Dit hele blok verdwijnt uit de productie-
       // build (import.meta.env.DEV → false), samen met callGeminiDirect en de
-      // ingelijnde VITE_GEMINI_API_KEY. Bewust een `if`, geen ternary.
+      // ingelijnde VITE_GEMINI_API_KEY. Bewust een `if`, geen ternary; beide
+      // voorwaarden zijn compile-time constanten (VITE_USE_PROXY=1 → dev via proxy).
       result = await callGeminiDirect(params);
     } else {
       result = await callGeminiViaProxy(params);
     }
+    // Uit de gedeelde cache: geen Gemini-call, dus apart gelogd (kost 0).
+    const fromCache = result.cached === true;
     void logAiUsage({
-      // Het opgeloste model, niet de alias: zo klopt de kostenraming ook nadat
-      // Google `gemini-flash-latest` naar een nieuwer (duurder) model verlegt.
-      feature: params.feature,
-      model: result.modelVersion || params.model,
+      feature: fromCache ? 'frayer-cache' : params.feature,
+      // Het model dat Google écht gebruikte (voor een correcte kostenraming).
+      model: fromCache ? 'cache' : (result.modelVersion || params.model),
       usage: result.usage,
       success: true,
       durationMs: Date.now() - startedAt,
@@ -201,7 +234,7 @@ async function generateTTSBuffer(text: string): Promise<AudioBuffer> {
 
   const result = await callGemini({
     feature: 'tts',
-    model: 'gemini-2.5-flash-preview-tts',
+    model: GEMINI_TTS_MODEL,
     contents: [{ parts: [{ text: `Spreek het volgende uit in standaard Belgisch Nederlands (Vlaams, geen dialect): "${text}"` }] }],
     config: {
       responseModalities: ['AUDIO'],
@@ -276,7 +309,7 @@ export const playTextAsSpeech = async (text: string): Promise<void> => {
   try {
     const result = await callGemini({
       feature: 'tts',
-      model: 'gemini-2.5-flash-preview-tts',
+      model: GEMINI_TTS_MODEL,
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: ['AUDIO'],
@@ -311,16 +344,6 @@ export const playTextAsSpeech = async (text: string): Promise<void> => {
 
 // --- HELPERS ---
 
-const cleanJsonOutput = (text: string): string => {
-  let cleaned = text.trim();
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```\s*/, '').replace(/\s*```$/, '');
-  }
-  return cleaned;
-};
-
 /**
  * Wrap user-supplied content in delimiters zodat de AI duidelijk kan herkennen
  * dat het om data gaat en niet om instructies. Mitigatie tegen prompt injection.
@@ -345,7 +368,8 @@ const censorTargetWord = (text: string, targetWord: string): string => {
 };
 
 const getAiConfig = (aiModel: PracticeSettings['aiModel']) => {
-  const model = 'gemini-flash-latest';
+  // Vastgepind model (geen rollende alias meer) — zie shared/frayerPrompt.ts.
+  const model = GEMINI_TEXT_MODEL;
   const config: Record<string, unknown> = {};
 
   if (aiModel === 'fast') {
@@ -358,28 +382,6 @@ const getAiConfig = (aiModel: PracticeSettings['aiModel']) => {
 type GenerationSettings = Pick<PracticeSettings, 'context' | 'difficulty' | 'aiModel'>;
 
 // --- SCHEMAS (plain objects, geen SDK import nodig) ---
-
-const frayerModelSchema = {
-  type: 'OBJECT',
-  properties: {
-    definitie: { type: 'STRING', description: 'Een eenvoudige definitie van het woord.' },
-    voorbeelden: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: {
-          zin: { type: 'STRING', description: 'De volledige voorbeeldzin.' },
-          gebruiktWoord: { type: 'STRING', description: 'De exacte vorm (vervoeging/verbuiging) van het basiswoord zoals het in de zin wordt gebruikt.' },
-        },
-        required: ['zin', 'gebruiktWoord'],
-      },
-      description: 'Drie objecten, elk met een complete, informatieve zin en de exacte vorm van het woord dat in die zin wordt gebruikt.',
-    },
-    synoniemen: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Drie woorden met een vergelijkbare betekenis.' },
-    antoniemen: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Drie woorden met een tegenovergestelde betekenis.' },
-  },
-  required: ['definitie', 'voorbeelden', 'synoniemen', 'antoniemen'],
-};
 
 const storySchema = {
   type: 'OBJECT',
@@ -423,128 +425,6 @@ const keyTermsSchema = {
   required: ['termen'],
 };
 
-// --- CONTEXT / DIFFICULTY ---
-
-/**
- * Mapping van richting-codes / vak-tags / niveau-tags naar mens-leesbare domein-
- * beschrijvingen voor Gemini. Wordt door zowel `getContextInstruction` (voor
- * Frayer/Quiz/Story) als `buildSubjectGuidance` (voor woord-extractie) gebruikt.
- *
- * Bronnen (in volgorde van precedence — eerste match wint):
- *   1. Hard-coded WordLevel-entries en historische richting-codes (hieronder)
- *   2. Vakken uit `data/curriculumVakken.ts` (automatisch via getVakDomainMap)
- *
- * De curriculumVakken-import dekt ALLE 70+ vakken uit de OneDrive-structuur
- * (AF/DF/OKAN). Hier hoeven we enkel de niveau-tags en de bestaande richting-
- * codes (die in oude profielen + URL's voorkomen) handmatig te bewaren.
- */
-const subjectMap: Record<string, string> = {
-  // ── Vak-mapping uit data/curriculumVakken.ts (70+ vakken, OKAN incl.) ──
-  // Spread komt eerst. Hard-coded entries hieronder OVERSCHRIJVEN deze bij key-
-  // botsing — waardoor de niveau-tags (Woordenschat2DF etc.) en de historische
-  // richting-codes (APPDA, BORGA, ...) altijd hun specifieke beschrijving
-  // behouden voor backwards-compat met oude SessionRecords. Op dit moment geen
-  // overlap in keys met curriculumVakken (richting-codes daar hebben formaat
-  // "APPDA-Informatica", niet "Applicatie- & Databeheer (APPDA)").
-  ...getVakDomainMap(),
-
-  // ── Niveau-tags (algemene woordenlijsten zonder specifiek vak) ──
-  [WordLevel.Woordenschat2DF]: 'algemene schooltaal en vakken in de 2e graad dubbele finaliteit (secundair onderwijs)',
-  [WordLevel.Woordenschat2AF]: 'praktische taal en vakken in de 2e graad arbeidsfinaliteit (beroepsonderwijs)',
-  [WordLevel.AcademischNederlands]: 'academisch taalgebruik en wetenschappelijke teksten',
-  [WordLevel.ProfessioneelNederlands]: 'professioneel taalgebruik op de werkvloer, stage en sollicitaties',
-
-  // ── Richting-codes (historische context-strings: behoud voor backwards-compat) ──
-  'Applicatie- & Databeheer (APPDA)': 'programmeren, databanken, netwerken, softwareontwikkeling en IT-beheer',
-  'Bedrijfsorganisatie (BORGA)': 'kantoorbeheer, administratie, boekhouding, HR-processen en zakelijke communicatie',
-  'Elektromechanische technieken (EMTEC)': 'elektriciteit, mechanica, techniek, machines, onderhoud en automatisering',
-  'Gezondheidszorg (GEZORG)': 'de zorgsector, verpleegkunde, het menselijk lichaam, hygiëne en de omgang met patiënten in een ziekenhuis- of woonzorgcontext',
-  'Internationale Handel & Logistiek (INHAL)': 'internationale handel, import en export, logistieke processen, transportmodi, supply chain management en douane',
-  'Opvoeden en Begeleiden (OPBEG)': 'pedagogisch handelen, ontwikkelingspsychologie, communicatieve vaardigheden en het begeleiden van diverse doelgroepen (zoals kinderen, jongeren en ouderen) in een opvoedkundige context',
-  'Sportbegeleider (SPOBE)': 'sport, beweging, coaching, spelregels, anatomie, trainingsleer en lichamelijke opvoeding',
-  'Wellness & Schoonheid (WESCH)': 'schoonheidszorg, wellness, lichaamsverzorging, gelaatsverzorging, massage, hygiëne en esthetiek',
-  'Onthaal, Organisatie & Sales (ONOSA)': 'onthaal, verkoop, winkelbeheer, administratie en klantvriendelijkheid',
-};
-
-/**
- * Resolveert een context-string naar zijn vakdomein-beschrijving uit subjectMap,
- * met fallback naar een generieke "schoolvak"-zin. Geeft null terug als context
- * leeg is of een bekend WordLevel (geen specifiek vak).
- */
-const resolveSubjectDomain = (context?: WordLevel | string): string | null => {
-  if (!context) return null;
-  if (typeof context === 'string' && context in subjectMap) {
-    return subjectMap[context];
-  }
-  const knownWordLevels = Object.values(WordLevel) as string[];
-  if (typeof context === 'string' && !knownWordLevels.includes(context)) {
-    return `het schoolvak of de studierichting "${context}"`;
-  }
-  return null;
-};
-
-/**
- * Bouwt een vakcontext-instructie voor woord-EXTRACTIE uit ruwe tekst. Helpt
- * Gemini om:
- *   1. Termen te kiezen die binnen het vakgebied passen
- *   2. Ambigue woorden (virus = computer-virus i.p.v. ziekte, muis = computer-
- *      muis i.p.v. dier) correct te interpreteren binnen de vakcontext
- *   3. Engelse termen en afkortingen te aanvaarden als ze in het vakgebied
- *      gangbaar zijn (iOS, USB, HTML, Wi-Fi, ...)
- *
- * Gebruikt bij `extractKeyTerms`. Bij Frayer/Quiz gebruiken we `getContextInstruction`
- * die de ambiguïteits-resolutie ook meeneemt voor consistente interpretatie.
- */
-const buildSubjectGuidance = (context?: WordLevel | string): string => {
-  const domain = resolveSubjectDomain(context);
-  if (!domain) return '';
-
-  return `
-
-VAKCONTEXT: Deze tekst hoort bij ${domain}.
-
-Volg deze regels strikt:
-1. Geef voorrang aan termen die specifiek voor dit vakgebied gangbaar zijn.
-2. Voor ambigue woorden met meerdere betekenissen (bv. "virus", "muis", "cookie", "venster", "veld", "tabel", "blok", "kop", "veld"): selecteer ze ALLEEN als ze in dit vakgebied een specifieke betekenis hebben, en interpreteer ze altijd in die vakcontext.
-3. Engelse termen en afkortingen (bv. iOS, USB, HTML, Wi-Fi, AI, OS, IP, URL, app) zijn welkom als ze in dit vakgebied gangbaar zijn — zelfs als ze geen Nederlandse vertaling hebben.
-4. Vermijd alledaagse woorden die niet vakspecifiek zijn.`;
-};
-
-const getContextInstruction = (context?: WordLevel | string, part: 'definitions' | 'story' | 'questions' = 'definitions'): string => {
-  if (!context) return '';
-  const relation = part === 'definitions' ? 'gerelateerd zijn aan' : 'zich afspelen in een context die relevant is voor';
-
-  if (typeof context === 'string' && context in subjectMap) {
-    const domain = subjectMap[context];
-    const baseInstr = `De voorbeelden en ${part} moeten ${relation} ${domain}.`;
-    // Voor definitions + questions: extra ambiguïteits-resolutie zodat het
-    // Frayer-model en de quiz-vragen consistent in vakcontext blijven, ook
-    // als het woord (bv. "virus") buiten dit vak een andere betekenis heeft.
-    if (part === 'definitions' || part === 'questions') {
-      return `${baseInstr} BELANGRIJK: als het doelwoord meerdere betekenissen heeft (bv. virus, muis, venster, cookie, veld, tabel), kies altijd de betekenis die past binnen ${domain}.`;
-    }
-    return baseInstr;
-  }
-
-  const knownWordLevels = Object.values(WordLevel) as string[];
-  if (typeof context === 'string' && !knownWordLevels.includes(context)) {
-    const baseInstr = `De voorbeelden en ${part} moeten ${relation} het schoolvak of de studierichting "${context}".`;
-    if (part === 'definitions' || part === 'questions') {
-      return `${baseInstr} BELANGRIJK: als het doelwoord meerdere betekenissen heeft, kies altijd de betekenis die past binnen dit vakgebied.`;
-    }
-    return baseInstr;
-  }
-
-  return '';
-};
-
-const getDifficultyInstruction = (difficulty?: PracticeSettings['difficulty']): string => {
-  if (difficulty === WordLevel.Beginner) return 'Gebruik zeer eenvoudige taal (CEFR A2-niveau).';
-  if (difficulty === WordLevel.Intermediate) return 'Gebruik duidelijke en correcte taal (CEFR B1-niveau).';
-  if (difficulty === WordLevel.Advanced) return 'Gebruik rijkere en meer formele taal (CEFR B2-niveau).';
-  return 'Gebruik duidelijke en correcte taal (CEFR B1-niveau).';
-};
-
 // --- GENERATIE FUNCTIES ---
 
 const MAX_FRAYER_RETRIES = 3;
@@ -553,22 +433,24 @@ export const generateFrayerModel = async (word: string, settings: GenerationSett
   let lastError: Error | null = null;
   const BASE_DELAY_MS = 1000;
 
-  const contextInstruction = getContextInstruction(settings.context);
-  const difficultyInstruction = getDifficultyInstruction(settings.difficulty);
-  const { model, config: aiCallConfig } = getAiConfig(settings.aiModel);
+  const { model } = getAiConfig(settings.aiModel);
+  const raw = { word, context: settings.context ?? '', difficulty: settings.difficulty ?? '' };
+  // Enkel woord, vak en niveau: de proxy bouwt de prompt zelf en deelt het
+  // antwoord via de gedeelde cache. Een woord dat die strenge controle niet
+  // doorstaat (bv. > 60 tekens, met een nieuwe regel of met '|') gaat zoals
+  // vroeger als gewone prompt — zonder cache — zodat de aanroepers niets merken.
+  const frayer = normalizeFrayerRequest(raw);
 
   for (let i = 0; i < MAX_FRAYER_RETRIES; i++) {
     try {
-      const result = await callGemini({
-        feature: 'frayer',
-        model,
-        contents: `Genereer een Frayer Model voor het Nederlandse woord "${word}". De doelgroep zijn NT2-leerders. ${difficultyInstruction} ${contextInstruction} Geef de definitie, 3 synoniemen, 3 antoniemen, en 3 voorbeeldobjecten. Elk voorbeeldobject moet een 'zin' bevatten (een complete, informatieve zin waarin het woord wordt gebruikt) en een 'gebruiktWoord' (de exacte, vervoegde of verbogen vorm van "${word}" die in die zin voorkomt). BELANGRIJKE REGEL: Als "${word}" een scheidbaar werkwoord is (bv. 'opbellen') en het in de zin gesplitst wordt gebruikt (bv. 'ik bel mijn oma op'), moet 'gebruiktWoord' BEIDE delen bevatten, gescheiden door een spatie (bv. 'bel op'). Dit is cruciaal voor de highlighting.`,
-        config: {
-          ...aiCallConfig,
-          responseMimeType: 'application/json',
-          responseSchema: frayerModelSchema,
-        },
-      });
+      const result = frayer
+        ? await callGemini({ feature: 'frayer', model, frayer })
+        : await callGemini({
+            feature: 'frayer',
+            model,
+            contents: buildFrayerPrompt(raw),
+            config: { ...FRAYER_GENERATION_CONFIG },
+          });
 
       const jsonString = cleanJsonOutput(result.text ?? '');
       const data = JSON.parse(jsonString) as FrayerModelData;

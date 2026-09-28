@@ -24,6 +24,7 @@
       ]
     },
     "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "noEmit": true,
     "strict": true,
     "noUnusedLocals": false,

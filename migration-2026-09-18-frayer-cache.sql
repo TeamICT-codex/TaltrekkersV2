@@ -32,7 +32,7 @@
 -- =====================================================
 
 CREATE TABLE IF NOT EXISTS public.frayer_cache (
-    -- "v1|woord|vak|niveau", genormaliseerd (kleine letters, getrimd)
+    -- "v1|woord|vak|niveau": woord in kleine letters, vak exact, niveau canoniek
     cache_key      TEXT PRIMARY KEY,
     word           TEXT NOT NULL,
     context        TEXT NOT NULL DEFAULT '',

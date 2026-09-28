@@ -173,10 +173,11 @@ export async function fetchAiUsageStats(
  * Enkel een schatting: de factuur van Google blijft de echte waarheid.
  *
  * LET OP — twee dingen om in het oog te houden:
- *  1. De app vraagt `gemini-flash-latest`, een rollende alias. Google verlegde
+ *  1. De app vroeg `gemini-flash-latest`, een rollende alias. Google verlegde
  *     die op 2026-09-02 naar gemini-3.8-flash, dat 2,5x duurder is qua input
- *     dan het oude 2.5 Flash. Daarom loggen we de ECHT gebruikte modelversie
- *     (zie geminiService.ts) en niet de aliasnaam.
+ *     dan het oude 2.5 Flash. Sindsdien is het model vastgepind (GEMINI_TEXT_MODEL
+ *     in shared/frayerPrompt.ts). We loggen nog steeds de ECHT gebruikte
+ *     modelversie (zie geminiService.ts), zodat oudere rijen ook kloppen.
  *  2. De introductieprijs van 3.8 Flash ($0.75/$3.75) loopt tot en met
  *     2026-12-31. Vanaf 2027-01-01 wordt dat $1.50/$7.50 — dan moeten deze
  *     cijfers hier verdubbeld worden.
@@ -191,6 +192,8 @@ export const PRICING_USD_PER_1M: Record<string, { input: number; output: number 
     'gemini-2.5-flash': { input: 0.30, output: 2.50 },
     // Spraak: output zijn audio-tokens (~25 per seconde geluid) — veruit het duurst
     'gemini-2.5-flash-preview-tts': { input: 0.50, output: 10.00 },
+    // Frayer-model uit de gedeelde cache (frayer_cache): geen Gemini-call, dus gratis.
+    cache: { input: 0, output: 0 },
 };
 
 /**
@@ -230,6 +233,7 @@ function emptyBucket(label: string): UsageBucket {
 /** Nederlandse namen voor de functie-labels die de client meestuurt. */
 export const FEATURE_LABELS_NL: Record<string, string> = {
     frayer: 'Frayer-model (leerling)',
+    'frayer-cache': 'Frayer-model (uit cache)',
     quiz: 'Quizvragen',
     feedback: 'Foutfeedback',
     vereenvoudig: 'Vraag vereenvoudigen',
