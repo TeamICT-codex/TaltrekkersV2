@@ -23,9 +23,17 @@ Een aparte gratis organisatie kost niets en houdt test en live ook in het dashbo
 
 1. Ga naar supabase.com. Klik bovenaan op de naam van je organisatie → **New organization**.
    Naam: bijvoorbeeld `TALent testomgeving`. Plan: **Free**.
-2. In die nieuwe organisatie: **New project**. Naam: bijvoorbeeld `talent-voor-taal-test`.
-3. Regio: **in de EU**, bijvoorbeeld *Central EU (Frankfurt)*.
-4. Kies een sterk databankwachtwoord en bewaar het in je wachtwoordbeheerder. Niemand anders heeft het nodig.
+2. In die nieuwe organisatie: **New project**. Naam: bijvoorbeeld `Talentvoortaal TEST` (met TEST erin,
+   zodat je het in de SQL-editor nooit met live verwart).
+3. **GitHub (optional)**: leeg laten. Niet aan de repo koppelen.
+4. Regio: **in de EU**, bij voorkeur *Central EU (Frankfurt)*.
+5. Kies een sterk databankwachtwoord en bewaar het in je wachtwoordbeheerder. Niemand anders heeft het nodig.
+6. **Security**: laat het zoals het standaard staat, net als bij live:
+   - *Enable Data API*: **aan** (de app praat via die weg met de databank);
+   - *Automatically expose new tables*: **aan**, ook al raadt Supabase uit. Het opzetscript rekent erop, net als de
+     live databank. De bescherming zit in de beveiligingsregels (RLS) die het script op alle 10 tabellen aanzet.
+     Staat dit uit, dan krijgt de app overal "permission denied";
+   - *Enable automatic RLS*: **uit** (het script zet RLS zelf aan).
 
 **Melding dat je al 2 gratis projecten hebt?** Supabase laat per persoon 2 actieve gratis projecten toe, over al je
 organisaties samen. Gepauzeerde projecten tellen niet mee. Pauzeer dan een gratis project dat nu niemand gebruikt
