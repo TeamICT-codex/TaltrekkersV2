@@ -15,12 +15,24 @@ De echte databank van de school (**live**) blijft onaangeroerd. Daar zorgen drie
 
 ## Wat moet jij doen? (eenmalig)
 
-### 1. Een nieuw Supabase-project maken
+### 1. Een nieuw Supabase-project maken (gratis)
 
-1. Ga naar supabase.com → **New project**.
-2. Naam: bijvoorbeeld `talent-voor-taal-test`.
+Het testproject past ruim in het gratis plan (**Free**, $0 per maand). Maak het in een **aparte organisatie**:
+zit de live app in een organisatie met een betalend plan, dan kost elk extra project daar ongeveer $10 per maand.
+Een aparte gratis organisatie kost niets en houdt test en live ook in het dashboard netjes uit elkaar.
+
+1. Ga naar supabase.com. Klik bovenaan op de naam van je organisatie → **New organization**.
+   Naam: bijvoorbeeld `TALent testomgeving`. Plan: **Free**.
+2. In die nieuwe organisatie: **New project**. Naam: bijvoorbeeld `talent-voor-taal-test`.
 3. Regio: **in de EU**, bijvoorbeeld *Central EU (Frankfurt)*.
 4. Kies een sterk databankwachtwoord en bewaar het in je wachtwoordbeheerder. Niemand anders heeft het nodig.
+
+**Melding dat je al 2 gratis projecten hebt?** Supabase laat per persoon 2 actieve gratis projecten toe, over al je
+organisaties samen. Gepauzeerde projecten tellen niet mee. Pauzeer dan een oud project dat je niet meer gebruikt,
+maar **nooit het live-project** (`armszlatvhjyolbzasrc`): dan ligt de app in de klas plat.
+
+**Na een week zonder gebruik** valt een gratis project in slaap. Klik dan in het dashboard op **Restore project**.
+Is er toch iets weg, dan bouw je de testdatabank gewoon opnieuw op met stap 2.
 
 ### 2. De structuur aanmaken
 
@@ -50,7 +62,14 @@ In het testproject:
    De test maakt er een tijdelijke testgebruiker mee aan en verwijdert die daarna weer.
 
 Aanmelden met Microsoft werkt in het testproject niet (dat is enkel voor live ingesteld).
-In de app kun je aanmelden met de **e-maillink**. Supabase verstuurt standaard maar een paar mails per uur.
+In de app meld je aan met de **e-maillink**. Het ingebouwde mailsysteem van Supabase heeft twee grenzen:
+
+- het stuurt enkel naar **leden van de organisatie**, dus naar het adres waarmee jij bij Supabase aanmeldt;
+- het stuurt hooguit **2 mails per uur**.
+
+De app laat bovendien enkel adressen op `@hetleercollectief.be` of `@gotalok.be` binnen.
+Meld je bij Supabase aan met een ander adres (bijvoorbeeld via GitHub)? Laat het de architect weten.
+Voor testen als leerling of als tweede gebruiker kan de architect aanmeldlinks klaarzetten die geen mail nodig hebben.
 
 ### 4. De sleutels in `.env.local` zetten — zelf, nooit in een chat plakken
 
