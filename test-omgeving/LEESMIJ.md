@@ -28,8 +28,10 @@ Een aparte gratis organisatie kost niets en houdt test en live ook in het dashbo
 4. Kies een sterk databankwachtwoord en bewaar het in je wachtwoordbeheerder. Niemand anders heeft het nodig.
 
 **Melding dat je al 2 gratis projecten hebt?** Supabase laat per persoon 2 actieve gratis projecten toe, over al je
-organisaties samen. Gepauzeerde projecten tellen niet mee. Pauzeer dan een oud project dat je niet meer gebruikt,
-maar **nooit het live-project** (`armszlatvhjyolbzasrc`): dan ligt de app in de klas plat.
+organisaties samen. Gepauzeerde projecten tellen niet mee. Pauzeer dan een gratis project dat nu niemand gebruikt
+(**Project Settings → General → Pause project**). Een gepauzeerd project staat offline, maar komt tot een jaar later
+terug met al zijn gegevens via **Restore project**. Raak niets aan in de organisatie van de live app
+(`Het leercollectief`, met het live-project `armszlatvhjyolbzasrc`).
 
 **Na een week zonder gebruik** valt een gratis project in slaap. Klik dan in het dashboard op **Restore project**.
 Is er toch iets weg, dan bouw je de testdatabank gewoon opnieuw op met stap 2.
