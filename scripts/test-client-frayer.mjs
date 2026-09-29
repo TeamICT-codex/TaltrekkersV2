@@ -184,6 +184,11 @@ test('de app merkt niets: zelfde exports, componenten en App ongewijzigd t.o.v. 
     'components/PracticeSession.tsx',
     'components/LoadingIndicator.tsx',
     'components/AiUsagePanel.tsx',
+    // "Wat is er nieuw?" in de voettekst (2026-09-29).
+    'App.tsx',
+    'components/NieuwsButton.tsx',
+    'components/NieuwsModal.tsx',
+    'data/nieuws.ts',
   ];
   const onverwacht = gewijzigd.filter(f => !toegelaten.includes(f));
   assert.deepEqual(onverwacht, [], `onverwacht gewijzigd t.o.v. main: ${onverwacht.join(', ')}`);
