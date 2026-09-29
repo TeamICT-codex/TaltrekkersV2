@@ -545,6 +545,9 @@ const CustomWordExtractor: React.FC<CustomWordExtractorProps> = ({
                         type="text"
                         value={context}
                         onChange={(e) => setContext(e.target.value)}
+                        // Zelfde grens als de AI-proxy (MAX_CONTEXT_LENGTH in shared/frayerPrompt.ts):
+                        // langer valt buiten de gedeelde cache.
+                        maxLength={80}
                         placeholder="bv. Geschiedenis, Het menselijk lichaam..."
                         className="w-full p-3 border-2 border-white/20 bg-white/10 rounded-lg focus:ring-2 focus:ring-tal-purple transition placeholder:text-slate-300"
                     />

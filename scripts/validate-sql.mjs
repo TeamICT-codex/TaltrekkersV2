@@ -222,7 +222,7 @@ async function controleerFrayerRls(db, label) {
 
   const gezien = await alsRol(db, 'authenticated', leerling, async () =>
     (await db.query(`SELECT cache_key FROM public.frayer_cache`)).rows.length);
-  meld(gezien === 1, `${label}: ingelogde gebruiker mag lezen (${gezien} rij)`);
+  meld(gezien === 0, `${label}: ingelogde gebruiker ziet niets (${gezien} rijen), enkel de proxy leest`);
 
   await faalt(() => alsRol(db, 'authenticated', leerling, () => db.exec(
     `INSERT INTO public.frayer_cache ${KOLOMMEN} VALUES ('v1|gif|x|', 'gif', 'x', '', 1, 'x', '{}'::jsonb)`)),

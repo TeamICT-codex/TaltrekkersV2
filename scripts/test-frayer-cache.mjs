@@ -181,14 +181,15 @@ try {
     }
   });
 
-  await stap('T9 RLS via de echte API: leerling leest wel, schrijft niet; anon ziet niets', async () => {
+  await stap('T9 RLS via de echte API: leerling en anon zien niets en kunnen niets wijzigen', async () => {
     const leerling = createClient(URL_DB, process.env.SUPABASE_ANON_KEY, {
       ...zonderSessie,
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
+    // Enkel de proxy (service_role) leest de cache; de rijen van T3-T6 bestaan wel.
+    assert.ok((await rij(SLEUTEL)), 'de testrij ontbreekt (T3 mislukt?)');
     const gelezen = await leerling.from('frayer_cache').select('cache_key').eq('context', CONTEXT);
-    assert.equal(gelezen.error, null);
-    assert.ok(gelezen.data.length >= 2, `leerling ziet ${gelezen.data.length} rijen`);
+    assert.equal((gelezen.data ?? []).length, 0, `leerling ziet ${(gelezen.data ?? []).length} rijen`);
     const toegevoegd = await leerling.from('frayer_cache').insert({ cache_key: `v1|gif|${CONTEXT}|`, word: 'gif', context: CONTEXT, model_data: {} });
     assert.ok(toegevoegd.error, 'leerling kon toevoegen!');
     const voor = await rij(SLEUTEL);

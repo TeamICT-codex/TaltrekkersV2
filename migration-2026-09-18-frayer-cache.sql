@@ -18,7 +18,7 @@
 --
 -- WAT ERIN ZIT — géén persoonsgegevens. Enkel woordenboekinhoud (definitie,
 --   voorbeeldzinnen, synoniemen, antoniemen), welk model ze schreef en hoe
---   vaak ze hergebruikt werd. Ingelogde gebruikers mogen lezen.
+--   vaak ze hergebruikt werd. Enkel de proxy leest; gewone gebruikers zien niets.
 --
 -- LEEGMAKEN — bv. na een promptwijziging of een slecht model:
 --   DELETE FROM public.frayer_cache;                         -- alles
@@ -51,13 +51,12 @@ CREATE INDEX IF NOT EXISTS frayer_cache_word_idx ON public.frayer_cache (word);
 
 ALTER TABLE public.frayer_cache ENABLE ROW LEVEL SECURITY;
 
+-- Een eerdere versie liet ingelogde gebruikers lezen; die regel verdwijnt.
 DROP POLICY IF EXISTS "Authenticated can read frayer cache" ON public.frayer_cache;
-CREATE POLICY "Authenticated can read frayer cache"
-ON public.frayer_cache FOR SELECT
-USING (auth.uid() IS NOT NULL);
 
--- Bewust geen INSERT/UPDATE/DELETE-policies: enkel de service_role (de proxy)
--- kan schrijven. De service_role omzeilt RLS volledig.
+-- Bewust GEEN enkele policy: enkel de service_role (de proxy) leest en schrijft,
+-- en die omzeilt RLS volledig. De app leest de tabel nooit rechtstreeks, dus
+-- gewone gebruikers hoeven er niets in te zien (ook niet wat iemand als vak intypte).
 
 -- =====================================================
 -- KLAAR ✅
