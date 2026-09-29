@@ -104,8 +104,9 @@ const AiUsagePanel: React.FC = () => {
                             <div className="text-2xl font-bold text-tal-purple mt-1 mb-3">{fmtUsd(p.costUsd)}</div>
                             <dl className="space-y-1 text-sm">
                                 <div className="flex justify-between gap-2">
-                                    <dt className="text-muted">Calls</dt>
-                                    <dd className="font-medium">{fmtInt(p.calls)}</dd>
+                                    {/* Zonder de cachetreffers: dit zijn de aanvragen die Google aanrekent. */}
+                                    <dt className="text-muted">AI-calls</dt>
+                                    <dd className="font-medium">{fmtInt(p.calls - p.cacheHits)}</dd>
                                 </div>
                                 <div className="flex justify-between gap-2">
                                     <dt className="text-muted">Input-tokens</dt>

@@ -253,10 +253,15 @@ export interface CacheSummary {
  * van de gelukte Frayer-calls, aan het tarief van het model dat de app NU
  * gebruikt (GEMINI_TEXT_MODEL). Zo telt "bespaard" wat een cachekaart vandaag
  * zou kosten, niet wat een kaart op het duurdere 3.8 Flash ooit kostte.
+ * Het gemiddelde komt bij voorkeur enkel uit kaarten van dat model zelf (3.8 Flash
+ * had meer denk-tokens); zijn er daar nog geen van, dan uit alle Frayer-calls.
  */
 export function costPerNewCardUsd(features: UsageGroup[]): number {
-    const frayer = features.filter(g => g.feature === 'frayer' && g.model !== 'cache');
-    const gelukt = frayer.reduce((n, g) => n + Math.max(0, g.calls - g.failed), 0);
+    const gelukteCalls = (lijst: UsageGroup[]) => lijst.reduce((n, g) => n + Math.max(0, g.calls - g.failed), 0);
+    const alleFrayer = features.filter(g => g.feature === 'frayer' && g.model !== 'cache');
+    const huidigModel = alleFrayer.filter(g => g.model === GEMINI_TEXT_MODEL);
+    const frayer = gelukteCalls(huidigModel) > 0 ? huidigModel : alleFrayer;
+    const gelukt = gelukteCalls(frayer);
     if (gelukt === 0) return 0;
     const input = frayer.reduce((n, g) => n + g.input_tokens, 0) / gelukt;
     const output = frayer.reduce((n, g) => n + g.output_tokens, 0) / gelukt;

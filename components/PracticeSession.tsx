@@ -108,6 +108,13 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
         } satisfies FrayerModelData;
       });
 
+      // Lukte geen enkele woordkaart (bv. geen verbinding), dan heeft studeren geen zin:
+      // meteen de foutmelding, en "Opnieuw proberen" maakt alles opnieuw.
+      if (failed.length > 0 && failed.length === words.length) {
+        const eersteFout = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        throw eersteFout?.reason ?? new Error('Geen enkele woordkaart kon gemaakt worden.');
+      }
+
       setFailedWords(failed);
       setFrayerModels(generatedModels);
 
@@ -212,10 +219,13 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
 
   if (phase === 'quiz_waiting') {
     if (quizStatus === 'error' && quizError) {
+      // Opnieuw proberen maakt enkel de quiz opnieuw en kan altijd; "Terug" brengt
+      // de leerling naar de woorden, zodat dit scherm nooit een doodlopend straatje is.
       return (
         <ErrorBanner
-          error={quizError}
+          error={{ ...quizError, canRetry: true }}
           onRetry={() => startQuiz(frayerModels)}
+          onBack={() => setPhase('studying')}
         />
       );
     }

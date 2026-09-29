@@ -62,6 +62,16 @@ test('kost van één nieuwe kaart: gemiddelde tokens van gelukte kaarten, aan he
     groep({ feature: 'frayer', model: 'gemini-3.8-flash', calls: 5, input_tokens: 1500, output_tokens: 1250 }),
     groep({ feature: 'frayer', model: 'gemini-2.5-flash', calls: 5, input_tokens: 1500, output_tokens: 1250 }),
   ]), PER_KAART, 'per kaart, gemengde modellen');
+  // Zijn er al kaarten op het huidige model, dan telt enkel dat gemiddelde:
+  // de oude 3.8 Flash-kaarten met veel denk-tokens duwen de besparing niet omhoog.
+  bijna(costPerNewCardUsd([
+    groep({ feature: 'frayer', model: 'gemini-3.8-flash', calls: 5, input_tokens: 5000, output_tokens: 10000 }),
+    groep({ feature: 'frayer', model: 'gemini-2.5-flash', calls: 5, input_tokens: 1500, output_tokens: 1250 }),
+  ]), PER_KAART, 'per kaart, enkel het huidige model');
+  // Nog geen kaarten op het huidige model: dan het gemiddelde van de oudere.
+  bijna(costPerNewCardUsd([
+    groep({ feature: 'frayer', model: 'gemini-3.8-flash', calls: 5, input_tokens: 1500, output_tokens: 1250 }),
+  ]), PER_KAART, 'per kaart, terugval op oudere kaarten');
   assert.equal(costPerNewCardUsd([]), 0, 'zonder gemaakte kaarten: 0, geen deling door nul');
   assert.equal(costPerNewCardUsd([groep({ feature: 'frayer', calls: 3, failed: 3 })]), 0, 'enkel mislukte kaarten: 0');
 });
