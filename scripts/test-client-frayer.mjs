@@ -176,7 +176,15 @@ test('de app merkt niets: zelfde exports, componenten en App ongewijzigd t.o.v. 
     ['diff', '--name-only', 'main', '--', 'App.tsx', 'index.tsx', 'index.html', 'components', 'contexts', 'hooks', 'games', 'data', 'types.ts', 'constants', 'constants.ts', 'services'],
     { cwd: ROOT, encoding: 'utf8' },
   ).trim().split('\n').filter(Boolean).sort();
-  const toegelaten = ['services/aiUsage.ts', 'services/geminiService.ts'];
+  const toegelaten = [
+    'services/aiUsage.ts',
+    'services/geminiService.ts',
+    // Bewust mee aangepast (2026-09-29): de quizvragen komen op de achtergrond,
+    // en het AI-verbruikpaneel toont wat de cache bespaart.
+    'components/PracticeSession.tsx',
+    'components/LoadingIndicator.tsx',
+    'components/AiUsagePanel.tsx',
+  ];
   const onverwacht = gewijzigd.filter(f => !toegelaten.includes(f));
   assert.deepEqual(onverwacht, [], `onverwacht gewijzigd t.o.v. main: ${onverwacht.join(', ')}`);
 });

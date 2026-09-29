@@ -85,7 +85,9 @@ const AiUsagePanel: React.FC = () => {
             );
         }
 
-        const { periods, perFeature, total, anonymousCalls } = view;
+        const { periods, perFeature, total, anonymousCalls, cache } = view;
+        // De cacheregels verschijnen pas zodra er echt kaarten uit de cache kwamen.
+        const toonCache = cache.hits > 0;
 
         return (
             <>
@@ -117,10 +119,33 @@ const AiUsagePanel: React.FC = () => {
                                     <dt className="text-muted">Mislukt</dt>
                                     <dd className={`font-medium ${p.failed > 0 ? 'text-orange-500' : ''}`}>{fmtInt(p.failed)}</dd>
                                 </div>
+                                {toonCache && (
+                                    <>
+                                        <div className="flex justify-between gap-2">
+                                            <dt className="text-muted">Uit cache</dt>
+                                            <dd className="font-medium">{fmtInt(p.cacheHits)}</dd>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                            <dt className="text-muted">Bespaard</dt>
+                                            <dd className="font-medium text-green-600">{fmtUsd(p.savedUsd)}</dd>
+                                        </div>
+                                    </>
+                                )}
                             </dl>
                         </div>
                     ))}
                 </div>
+
+                {/* Gedeelde cache: hoeveel woordkaarten niet opnieuw gemaakt moesten worden. */}
+                {toonCache && (
+                    <p className="mt-3 text-sm">
+                        ♻️ <strong>{fmtInt(cache.hits)}</strong> van de {fmtInt(cache.hits + cache.generated)} woordkaarten
+                        kwamen uit de cache
+                        {cache.share !== null && <> ({Math.round(cache.share * 100)}%)</>}
+                        , zonder nieuwe AI-aanvraag. Geschat bespaard: <strong className="text-green-600">{fmtUsd(cache.savedUsd)}</strong>{' '}
+                        <span className="text-muted">(laatste 90 dagen)</span>
+                    </p>
+                )}
 
                 {/* Anonieme calls: nuttig misbruik-signaal (niemand ingelogd = mogelijk scraping). */}
                 {anonymousCalls > 0 && (
@@ -173,12 +198,17 @@ const AiUsagePanel: React.FC = () => {
                 </div>
 
                 <p className="mt-3 text-xs text-muted leading-relaxed">
-                    Bedragen zijn een schatting in US-dollar, berekend uit de gelogde tokens maal het tarief per
-                    model: Gemini 3.8 Flash $0.75 per 1M input en $3.75 per 1M output (introductieprijs t.e.m.
-                    31 december 2026, daarna het dubbele), spraak $0.50 en $10.00. Denk-tokens rekent Google als
-                    output, dus die tellen mee. De factuur van Google is de enige echte waarheid. Er wordt gekeken
-                    naar de laatste 90 dagen (max. 20.000 rijen); mislukte calls hebben geen gekende tokens en
-                    kosten hier dus $0.
+                    Bedragen zijn een schatting in US-dollar: de gelogde tokens maal het tarief per 1M tokens van het
+                    model dat Google gebruikte. Gemini 2.5 Flash $0.30 input en $2.50 output (het vaste model voor
+                    tekst); oudere aanroepen op Gemini 3.8 Flash $0.75 en $3.75 (introductieprijs t.e.m.
+                    31 december 2026, daarna het dubbele); spraak $0.50 en $10.00. Denk-tokens rekent Google als
+                    output, dus die tellen mee. Woordkaarten uit de cache kosten niets; &quot;bespaard&quot; is wat
+                    ze nieuw gemaakt met Gemini 2.5 Flash gekost zouden hebben. Mislukte calls hebben geen gekende
+                    tokens en kosten hier $0. Er wordt gekeken naar de laatste 90 dagen.
+                </p>
+                <p className="mt-2 text-xs text-muted leading-relaxed">
+                    De echte kost staat bij Google, in euro: Google AI Studio → Spend. Vergelijk die af en toe met
+                    deze teller, want niet elke aanroep komt hier terecht (bijvoorbeeld tests tijdens de ontwikkeling).
                 </p>
             </>
         );

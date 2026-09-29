@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { GEMINI_TEXT_MODEL } from '../shared/frayerPrompt.ts';
 
 /**
  * AI-verbruik: ophalen + rekenwerk.
@@ -169,7 +170,7 @@ export async function fetchAiUsageStats(
 
 /**
  * Tarieven van Google, in US-dollar per 1 miljoen tokens.
- * Gecontroleerd op ai.google.dev/gemini-api/docs/pricing op 2026-09-08.
+ * Gecontroleerd op ai.google.dev/gemini-api/docs/pricing op 2026-09-08 en 2026-09-29.
  * Enkel een schatting: de factuur van Google blijft de echte waarheid.
  *
  * LET OP — twee dingen om in het oog te houden:
@@ -224,10 +225,42 @@ export interface UsageBucket {
     outputTokens: number;
     failed: number;
     costUsd: number;
+    /** Woordkaarten uit de gedeelde cache (model 'cache'): geen Gemini-call. */
+    cacheHits: number;
+    /** Geschat: wat die cachekaarten opnieuw gemaakt gekost zouden hebben. */
+    savedUsd: number;
 }
 
 function emptyBucket(label: string): UsageBucket {
-    return { label, calls: 0, inputTokens: 0, outputTokens: 0, failed: 0, costUsd: 0 };
+    return { label, calls: 0, inputTokens: 0, outputTokens: 0, failed: 0, costUsd: 0, cacheHits: 0, savedUsd: 0 };
+}
+
+/** Wat de cache opleverde over de hele periode van het paneel (standaard 90 dagen). */
+export interface CacheSummary {
+    /** Woordkaarten uit de cache. */
+    hits: number;
+    /** Woordkaarten die Gemini nieuw maakte (gelukt). */
+    generated: number;
+    /** Aandeel uit de cache, 0 tot 1; null zonder woordkaarten. */
+    share: number | null;
+    /** Geschatte kost van één nieuwe woordkaart met het huidige tekstmodel. */
+    costPerCardUsd: number;
+    savedUsd: number;
+}
+
+/**
+ * Geschatte kost van één nieuw gemaakte woordkaart: het gemiddelde aantal tokens
+ * van de gelukte Frayer-calls, aan het tarief van het model dat de app NU
+ * gebruikt (GEMINI_TEXT_MODEL). Zo telt "bespaard" wat een cachekaart vandaag
+ * zou kosten, niet wat een kaart op het duurdere 3.8 Flash ooit kostte.
+ */
+export function costPerNewCardUsd(features: UsageGroup[]): number {
+    const frayer = features.filter(g => g.feature === 'frayer' && g.model !== 'cache');
+    const gelukt = frayer.reduce((n, g) => n + Math.max(0, g.calls - g.failed), 0);
+    if (gelukt === 0) return 0;
+    const input = frayer.reduce((n, g) => n + g.input_tokens, 0) / gelukt;
+    const output = frayer.reduce((n, g) => n + g.output_tokens, 0) / gelukt;
+    return estimateCostUsd({ model: GEMINI_TEXT_MODEL, input_tokens: input, output_tokens: output });
 }
 
 /** Nederlandse namen voor de functie-labels die de client meestuurt. */
@@ -260,15 +293,23 @@ export function buildUsageView(stats: AiUsageStats): {
     perFeature: UsageBucket[];
     total: UsageBucket;
     anonymousCalls: number;
+    cache: CacheSummary;
 } {
-    const voegToe = (bucket: UsageBucket, g: UsageGroup): UsageBucket => ({
-        ...bucket,
-        calls: bucket.calls + g.calls,
-        inputTokens: bucket.inputTokens + g.input_tokens,
-        outputTokens: bucket.outputTokens + g.output_tokens,
-        failed: bucket.failed + g.failed,
-        costUsd: bucket.costUsd + estimateCostUsd(g),
-    });
+    const perKaart = costPerNewCardUsd(stats.features);
+
+    const voegToe = (bucket: UsageBucket, g: UsageGroup): UsageBucket => {
+        const hits = g.model === 'cache' ? g.calls - g.failed : 0;
+        return {
+            ...bucket,
+            calls: bucket.calls + g.calls,
+            inputTokens: bucket.inputTokens + g.input_tokens,
+            outputTokens: bucket.outputTokens + g.output_tokens,
+            failed: bucket.failed + g.failed,
+            costUsd: bucket.costUsd + estimateCostUsd(g),
+            cacheHits: bucket.cacheHits + hits,
+            savedUsd: bucket.savedUsd + hits * perKaart,
+        };
+    };
 
     const periods = PERIOD_LABELS.map(({ key, label }) =>
         stats.periods
@@ -288,5 +329,19 @@ export function buildUsageView(stats: AiUsageStats): {
     const alles = periods[periods.length - 1] ?? emptyBucket('Totaal');
     const total: UsageBucket = { ...alles, label: 'Totaal' };
 
-    return { periods, perFeature, total, anonymousCalls: stats.anonymous_calls };
+    const hits = stats.features
+        .filter(g => g.feature === 'frayer-cache')
+        .reduce((n, g) => n + g.calls - g.failed, 0);
+    const generated = stats.features
+        .filter(g => g.feature === 'frayer' && g.model !== 'cache')
+        .reduce((n, g) => n + Math.max(0, g.calls - g.failed), 0);
+    const cache: CacheSummary = {
+        hits,
+        generated,
+        share: hits + generated > 0 ? hits / (hits + generated) : null,
+        costPerCardUsd: perKaart,
+        savedUsd: hits * perKaart,
+    };
+
+    return { periods, perFeature, total, anonymousCalls: stats.anonymous_calls, cache };
 }

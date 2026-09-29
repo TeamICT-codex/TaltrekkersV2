@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FrayerModelData, PracticeSettings, QuizQuestion, QuizResult, StudyItemTiming, QuizItemTiming, SessionTimingData } from '../types';
 import { generateFrayerModel, generateQuizQuestions, preloadTTSBatch } from '../services/geminiService';
 import { categorizeError, AppError } from '../services/errorHandling';
@@ -18,12 +18,16 @@ interface PracticeSessionProps {
 }
 
 type StudyMode = 'frayer' | 'flashcards';
-type SessionPhase = 'loading' | 'study_mode_selection' | 'studying' | 'quiz';
+type SessionPhase = 'loading' | 'study_mode_selection' | 'studying' | 'quiz_waiting' | 'quiz';
+/** De quizvragen worden op de achtergrond gemaakt terwijl de leerling studeert. */
+type QuizStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFinish }) => {
   const [phase, setPhase] = useState<SessionPhase>('loading');
   const [frayerModels, setFrayerModels] = useState<FrayerModelData[]>([]);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [quizStatus, setQuizStatus] = useState<QuizStatus>('idle');
+  const [quizError, setQuizError] = useState<AppError | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [studyMode, setStudyMode] = useState<StudyMode>('frayer');
 
@@ -33,10 +37,46 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
   const [studyTimings, setStudyTimings] = useState<StudyItemTiming[]>([]);
   const [quizTimings, setQuizTimings] = useState<QuizItemTiming[]>([]);
 
+  // Elke opbouw en elke quizpoging krijgt een volgnummer. Een antwoord van een
+  // oudere poging, of dat pas binnenkomt na het verlaten van de oefening, wordt genegeerd.
+  const setupRun = useRef(0);
+  const quizRun = useRef(0);
+  useEffect(() => () => { setupRun.current++; quizRun.current++; }, []);
+
+  /** Maakt de quizvragen op de achtergrond; de leerling kan intussen al studeren. */
+  const startQuiz = useCallback((models: FrayerModelData[]) => {
+    const run = ++quizRun.current;
+    setQuizStatus('loading');
+    setQuizError(null);
+    generateQuizQuestions(models, words, {
+      aiModel: settings.aiModel,
+      context: settings.context,
+      difficulty: settings.difficulty
+    }).then(
+      questions => {
+        if (run !== quizRun.current) return;
+        // Randomize quiz questions immediately upon generation
+        setQuizQuestions(shuffleArray(questions));
+        setQuizStatus('ready');
+      },
+      (err: unknown) => {
+        if (run !== quizRun.current) return;
+        console.error("Fout bij het maken van de quizvragen:", err);
+        setQuizError(categorizeError(err, 'Quizvragen maken'));
+        setQuizStatus('error');
+      }
+    );
+  }, [words, settings]);
+
   const setupSession = useCallback(async () => {
+    const run = ++setupRun.current;
+    quizRun.current++; // een quiz van een vorige opbouw telt niet meer
     try {
       setError(null);
       setPhase('loading');
+      setQuizStatus('idle');
+      setQuizError(null);
+      setQuizQuestions([]);
 
       const modelPromises = words.map(word => {
         const predefinedModel = ALL_PREDEFINED_MODELS[word.toLowerCase()];
@@ -52,6 +92,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
 
       // Promise.allSettled: één mislukt woord blokkeert de rest niet meer
       const results = await Promise.allSettled(modelPromises);
+      if (run !== setupRun.current) return;
       const failed: string[] = [];
       const generatedModels: FrayerModelData[] = results.map((result, index) => {
         if (result.status === 'fulfilled') {
@@ -70,33 +111,29 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
       setFailedWords(failed);
       setFrayerModels(generatedModels);
 
-      // Quiz generatie en optionele TTS preloading parallel
-      const quizPromise = generateQuizQuestions(generatedModels, words, {
-        aiModel: settings.aiModel,
-        context: settings.context,
-        difficulty: settings.difficulty
-      });
+      // Niet meer wachten op de quizvragen (10 à 12 s voor 20 woorden): die
+      // komen op de achtergrond, terwijl de leerling de woorden bestudeert.
+      startQuiz(generatedModels);
 
-      const ttsPromise = settings.enableTTS
-        ? preloadTTSBatch(
-            generatedModels.flatMap((model, i) => [
-              { key: words[i], text: words[i] },
-              { key: `${words[i]}:definitie`, text: model.definitie },
-            ]).filter(item => item.text) // skip lege definities (failed words)
-          )
-        : Promise.resolve(new Map<string, AudioBuffer>());
+      // Uitspraak vooraf laden kiest de leerling zelf; daarop wacht het laadscherm wel.
+      if (settings.enableTTS) {
+        await preloadTTSBatch(
+          generatedModels.flatMap((model, i) => [
+            { key: words[i], text: words[i] },
+            { key: `${words[i]}:definitie`, text: model.definitie },
+          ]).filter(item => item.text) // skip lege definities (failed words)
+        );
+        if (run !== setupRun.current) return;
+      }
 
-      const [generatedQuestions] = await Promise.all([quizPromise, ttsPromise]);
-
-      // Randomize quiz questions immediately upon generation
-      setQuizQuestions(shuffleArray(generatedQuestions));
       setPhase('study_mode_selection');
 
     } catch (err) {
+      if (run !== setupRun.current) return;
       console.error("Fout bij het opzetten van de sessie:", err);
       setError(categorizeError(err, 'Oefening voorbereiden'));
     }
-  }, [words, settings]);
+  }, [words, settings, startQuiz]);
 
   useEffect(() => {
     if (words.length > 0) {
@@ -127,10 +164,25 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
     setQuizTimings(prev => [...prev, { word, seconds }]);
   }, []);
 
-  const handleStudyComplete = () => {
+  const beginQuiz = useCallback(() => {
     setQuizPhaseStart(Date.now());
     setPhase('quiz');
+  }, []);
+
+  const handleStudyComplete = () => {
+    if (quizStatus === 'ready') {
+      beginQuiz();
+    } else {
+      // Vragen nog niet klaar (of mislukt): kort wachtscherm, daarna start de quiz vanzelf.
+      setPhase('quiz_waiting');
+    }
   };
+
+  useEffect(() => {
+    if (phase === 'quiz_waiting' && quizStatus === 'ready') {
+      beginQuiz();
+    }
+  }, [phase, quizStatus, beginQuiz]);
 
   const handleQuizComplete = (score: number, results: QuizResult[]) => {
     const studyPhaseSeconds = studyPhaseStart ? (Date.now() - studyPhaseStart) / 1000 : 0;
@@ -156,6 +208,18 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
 
   if (phase === 'loading') {
     return <LoadingIndicator />;
+  }
+
+  if (phase === 'quiz_waiting') {
+    if (quizStatus === 'error' && quizError) {
+      return (
+        <ErrorBanner
+          error={quizError}
+          onRetry={() => startQuiz(frayerModels)}
+        />
+      );
+    }
+    return <LoadingIndicator hint="Je quizvragen worden klaargemaakt..." />;
   }
 
   return (

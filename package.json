@@ -8,14 +8,15 @@
     "dev:api": "node --experimental-transform-types --no-warnings scripts/dev-api.mjs",
     "build": "vite build && node scripts/check-bundle.mjs",
     "preview": "vite preview",
-    "test:unit": "npm run test:prompt && npm run test:proxy && npm run test:client",
+    "test:unit": "npm run test:prompt && npm run test:proxy && npm run test:client && npm run test:verbruik",
     "test:prompt": "node --experimental-transform-types --no-warnings scripts/test-prompt-identiek.mjs",
     "test:proxy": "node --experimental-transform-types --no-warnings scripts/test-proxy-logica.mjs",
     "test:client": "node --experimental-transform-types --no-warnings scripts/test-client-frayer.mjs",
     "test:rook": "node --experimental-transform-types --no-warnings scripts/dev-api.mjs --rooktest",
     "test:api": "node --experimental-transform-types --no-warnings scripts/test-frayer-cache.mjs",
     "validate:sql": "node scripts/validate-sql.mjs",
-    "check:vercel": "node scripts/check-vercel-functie.mjs"
+    "check:vercel": "node scripts/check-vercel-functie.mjs",
+    "test:verbruik": "node --experimental-transform-types --no-warnings scripts/test-ai-verbruik.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.21.0",

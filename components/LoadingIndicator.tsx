@@ -23,7 +23,12 @@ const FACTS_AND_QUOTES = [
     "Jouw persoonlijke taalleraar start op..."
 ];
 
-const LoadingIndicator: React.FC = () => {
+interface LoadingIndicatorProps {
+    /** Korte uitleg onderaan (standaard "Even geduld aub..."). */
+    hint?: string;
+}
+
+const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({ hint = 'Even geduld aub...' }) => {
     const [message, setMessage] = useState(FACTS_AND_QUOTES[0]);
 
     useEffect(() => {
@@ -59,7 +64,7 @@ const LoadingIndicator: React.FC = () => {
                 </div>
                 
                 <p className="mt-6 text-sm text-tal-teal-dark font-semibold bg-white/10 px-3 py-1 rounded-full">
-                    Even geduld aub...
+                    {hint}
                 </p>
             </div>
         </div>
