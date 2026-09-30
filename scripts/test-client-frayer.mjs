@@ -186,6 +186,9 @@ test('de app merkt niets: zelfde exports, componenten en App ongewijzigd t.o.v. 
     'components/AiUsagePanel.tsx',
     // Contextveld begrensd op 80 tekens, zoals de proxy (2026-09-29).
     'components/CustomWordExtractor.tsx',
+    // Vangnet: herladen bij een update (2026-09-30).
+    'index.tsx',
+    'services/herladenNaUpdate.ts',
     // "Wat is er nieuw?" in de voettekst (2026-09-29).
     'App.tsx',
     'components/NieuwsButton.tsx',

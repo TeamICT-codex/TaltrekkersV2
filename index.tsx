@@ -5,6 +5,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './components/ThemeContext';
+import { installeerHerladenNaUpdate } from './services/herladenNaUpdate';
+
+// Vóór het renderen: een tabblad met een oude versie herlaadt zichzelf bij een update.
+installeerHerladenNaUpdate();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
