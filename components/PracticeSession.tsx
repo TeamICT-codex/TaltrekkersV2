@@ -32,7 +32,6 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
   const [studyMode, setStudyMode] = useState<StudyMode>('frayer');
 
   const [failedWords, setFailedWords] = useState<string[]>([]);
-  const [studyPhaseStart, setStudyPhaseStart] = useState<number | null>(null);
   const [quizPhaseStart, setQuizPhaseStart] = useState<number | null>(null);
   const [studyTimings, setStudyTimings] = useState<StudyItemTiming[]>([]);
   const [quizTimings, setQuizTimings] = useState<QuizItemTiming[]>([]);
@@ -148,10 +147,15 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
     }
   }, [setupSession]);
 
+  // Studietijd = enkel de tijd in de studiefase, opgeteld over elke keer dat de
+  // leerling daar zit (ook na "Terug" vanuit een quizfout). Wachten op de quiz en
+  // de quiz zelf tellen niet mee: vroeger liep de studietijd door tot het einde van
+  // de quiz, waardoor de sessieduur de quiztijd dubbel telde.
+  const studyMs = useRef(0);
   useEffect(() => {
-    if (phase === 'studying') {
-      setStudyPhaseStart(Date.now());
-    }
+    if (phase !== 'studying') return;
+    const start = Date.now();
+    return () => { studyMs.current += Date.now() - start; };
   }, [phase]);
 
   const recordStudyTime = useCallback((word: string, seconds: number) => {
@@ -192,7 +196,7 @@ const PracticeSession: React.FC<PracticeSessionProps> = ({ words, settings, onFi
   }, [phase, quizStatus, beginQuiz]);
 
   const handleQuizComplete = (score: number, results: QuizResult[]) => {
-    const studyPhaseSeconds = studyPhaseStart ? (Date.now() - studyPhaseStart) / 1000 : 0;
+    const studyPhaseSeconds = studyMs.current / 1000;
     const quizPhaseSeconds = quizPhaseStart ? (Date.now() - quizPhaseStart) / 1000 : 0;
 
     const timingData: SessionTimingData = {

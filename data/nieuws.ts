@@ -28,6 +28,17 @@ export interface NieuwsBlok {
 
 export const NIEUWS: NieuwsBlok[] = [
     {
+        // Datum = dag van livegang van de juiste oefentijd; pas aan bij het live zetten.
+        datum: '2026-09-30',
+        titel: 'De juiste oefentijd',
+        items: [
+            {
+                soort: 'opgelost',
+                tekst: 'De oefentijd per sessie in het leerkrachtendashboard telde de tijd van de quiz dubbel. Nieuwe sessies tonen nu de echte tijd; oudere sessies blijven iets te lang.',
+            },
+        ],
+    },
+    {
         // Datum = dag van livegang van de cache en de snellere start; pas aan bij het live zetten.
         datum: '2026-09-29',
         titel: 'Sneller aan de slag',

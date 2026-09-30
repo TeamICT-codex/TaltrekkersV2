@@ -2,7 +2,7 @@
 // de code op `main` in services/geminiService.ts. De referentie komt telkens
 // vers uit git (git show main:…), niet uit een kopie die kan verouderen.
 //
-// Start: npm run test:prompt        (andere referentie: PROMPT_REF=<commit> npm run test:prompt)
+// Start: npm run test:prompt        (vergelijkt met 2aab094; andere referentie: PROMPT_REF=<commit> npm run test:prompt)
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,7 +11,8 @@ import { join } from 'node:path';
 import test, { after } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-const REF = process.env.PROMPT_REF || 'main';
+// 2aab094 = de laatste versie met de oude promptopbouw in de browser (vóór de cache op main kwam).
+const REF = process.env.PROMPT_REF || '2aab094';
 const gitShow = pad => execFileSync('git', ['show', `${REF}:${pad}`], { encoding: 'utf8', maxBuffer: 50e6 });
 
 /** Stuk tekst tussen twee unieke markeringen (begin inbegrepen, eind niet). */
