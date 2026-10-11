@@ -57,11 +57,13 @@ function nieuweMiniReact() {
   let laatste = null;
   let gepland = false;
   let effecten = [];
+  let fout = null;
   const zelfde = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Object.is(x, b[i]));
   const plan = () => {
     if (gepland || !comp) return;
     gepland = true;
-    queueMicrotask(() => { gepland = false; if (comp) render(); });
+    // Een fout tijdens een latere render (zoals in React) komt bij de volgende huidig() boven.
+    queueMicrotask(() => { gepland = false; if (comp) { try { render(); } catch (e) { fout = e; } } });
   };
   function render() {
     idx = 0;
@@ -105,7 +107,7 @@ function nieuweMiniReact() {
       });
     },
     mount(c, p) { comp = c; props = p; slots = []; render(); },
-    huidig: () => laatste,
+    huidig() { if (fout) throw fout; return laatste; },
     ontkoppel() {
       for (const s of slots) if (s && typeof s.opruimen === 'function') s.opruimen();
       comp = null;
@@ -129,7 +131,7 @@ export const Suspense = 'Suspense';
 export const lazy = laad => ({ __lazy: laad });
 export default { createContext, useContext, useState, useRef, useMemo, useCallback, useEffect, Fragment, Suspense, lazy };`;
 const JSX_MODULE = `
-export const jsx = (type, props) => ({ type, props });
+export const jsx = (type, props, key) => ({ type, props, key });
 export const jsxs = jsx;
 export const jsxDEV = jsx;
 export const Fragment = 'Fragment';`;
@@ -597,5 +599,112 @@ test('zwakke woorden vanuit Mijn voortgang: App geeft de aangemelde leerling mee
   dashboard.props.onPracticeWeakWords(['woord1', 'woord2']);
   await wacht(0);
   assert.deepEqual(oproepen.zwakkeWoorden, [['test leerling twee', ['woord1', 'woord2']]]);
+  R.ontkoppel();
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 6. Leerkrachtdashboard: een leeg e-mailadres voegt niets samen en crasht niets (SQL-3)
+// ═════════════════════════════════════════════════════════════════════════════
+// De echte TeacherDashboard.tsx met de kleine React; Supabase, useAuth en het AI-paneel zijn nagebootst.
+// Klas: Anna en Bram (Microsoft, adres enkel in de metadata: profiles.email leeg) en Cas oefenden; Dirk
+// (ook zonder adres) nog niet.
+let dashboardModule = null;
+const laadDashboard = async () => (dashboardModule ??= await bundel('leerkracht', 'components/TeacherDashboard.tsx', {
+  '(^|/)services/supabase$': SUPABASE_MODULE,
+  '(^|/)contexts/AuthContext$': 'export const useAuth = () => globalThis.__nepAuthWaarde;',
+  '(^|/)AiUsagePanel$': 'export default function AiUsagePanel() { return null; }',
+}, {}, true));
+
+const ID = n => `00000000-0000-4000-8000-0000000000${n}`;
+const profiel = (id, naam, email) => ({ id, email, full_name: naam, klas: 'AF 5e', finaliteit: 'AF', jaargang: '5e', points: 10, created_at: '2026-10-01T08:00:00Z' });
+const KLAS = [profiel(ID('a1'), 'Test Anna', null), profiel(ID('b1'), 'Test Bram', null), profiel(ID('c1'), 'Test Cas', 'f0.hotfix.cas@gotalok.be'), profiel(ID('d1'), 'Test Dirk', null)];
+let sessieNr = 0;
+const sessie = p => ({
+  id: `sessie-${++sessieNr}`, user_id: p.id, score: 8, total_questions: 10, duration_seconds: 60,
+  completed_at: new Date(Date.now() - sessieNr * 60_000).toISOString(), context: 'Woordenschat 2DF', file_name: null,
+  course_id: null, finaliteit: 'AF', jaargang: '5e', quiz_results: [{ word: 'factuur', correct: true }], total_words: 148,
+  profiles: { full_name: p.full_name, email: p.email, klas: p.klas, points: p.points },
+});
+const SESSIES = [sessie(KLAS[0]), sessie(KLAS[1]), sessie(KLAS[1]), sessie(KLAS[2])];
+
+function tekst(k) {
+  if (k == null || typeof k === 'boolean') return '';
+  if (typeof k === 'string' || typeof k === 'number') return String(k);
+  if (Array.isArray(k)) return k.map(tekst).join('');
+  return tekst(k.props?.children);
+}
+
+async function startDashboard() {
+  const m = await laadDashboard();
+  const vragen = [];
+  globalThis.__nepAuthWaarde = { role: 'teacher' };
+  globalThis.__nepSupabase = {
+    from(tabel) {
+      const vraag = { tabel, select: null };
+      vragen.push(vraag);
+      const data = tabel === 'practice_sessions' ? SESSIES : tabel === 'profiles' ? KLAS : [];
+      const keten = {
+        select(k) { vraag.select = k; return keten; },
+        eq() { return keten; },
+        order() { return keten; },
+        then(ok, nok) { return Promise.resolve({ data: structuredClone(data), error: null }).then(ok, nok); },
+      };
+      return keten;
+    },
+  };
+  const R = nieuweMiniReact();
+  globalThis.__miniReact = R;
+  R.mount(m.default, { onBack() {} });
+  await wacht(20);
+  return { m, R, vragen };
+}
+
+const knop = (boom, woord) => vindAlle(boom, k => k.type === 'button' && tekst(k).includes(woord))[0];
+
+test('leerkrachtdashboard: de zuivere hulpjes (sleutel, naam, "(geen e-mailadres)")', async () => {
+  const m = await laadDashboard();
+  assert.equal(m.GEEN_EMAIL, '(geen e-mailadres)');
+  assert.equal(m.leerlingSleutel({ id: 's1', user_id: ID('a1') }), ID('a1'));
+  assert.notEqual(m.leerlingSleutel({ id: 's1', user_id: null }), m.leerlingSleutel({ id: 's2', user_id: null }), 'twee sessies zonder id worden geen leerling');
+  assert.equal(m.leerlingNaam('Test Anna', null), 'Test Anna');
+  assert.equal(m.leerlingNaam(null, 'f0.hotfix.cas@gotalok.be'), 'f0.hotfix.cas');
+  assert.equal(m.leerlingNaam(null, null), 'Onbekend');
+});
+
+test('leerkrachtdashboard: leerlingen zonder adres worden niet samengevoegd en tellen mee', async () => {
+  const { R, vragen } = await startDashboard();
+  assert.match(vragen.find(v => v.tabel === 'practice_sessions').select, /\buser_id\b/, 'user_id wordt niet opgehaald');
+  // Sessies: elke rij met de naam, en "(geen e-mailadres)" waar het adres leeg is.
+  const sessiesTekst = tekst(R.huidig());
+  for (const naam of ['Test Anna', 'Test Bram', 'Test Cas']) assert.ok(sessiesTekst.includes(naam), naam);
+  assert.equal(sessiesTekst.split('(geen e-mailadres)').length - 1, 3, 'Anna 1x en Bram 2x zonder adres');
+
+  knop(R.huidig(), 'Leerlingen').props.onClick();
+  await wacht(0);
+  const boom = R.huidig();
+  const kaarten = vindAlle(boom, k => k.type === 'div' && [ID('a1'), ID('b1'), ID('c1')].includes(k.key));
+  assert.equal(kaarten.length, 3, 'Anna en Bram samengevoegd tot één leerling');
+  const perLeerling = Object.fromEntries(kaarten.map(k => [k.key, tekst(k)]));
+  assert.match(perLeerling[ID('a1')], /Test Anna.*\(geen e-mailadres\).*1 sessies/);
+  assert.match(perLeerling[ID('b1')], /Test Bram.*\(geen e-mailadres\).*2 sessies/);
+  assert.match(perLeerling[ID('c1')], /Test Cas.*f0\.hotfix\.cas@gotalok\.be.*1 sessies/);
+  const overzicht = vindAlle(boom, k => k.type === 'div' && /leerlingen actief/.test(tekst(k)) && !/Nog geen activiteit/.test(tekst(k))).at(-1);
+  assert.equal(tekst(overzicht).replace(/\s+/g, ' ').trim(), '3 van 4 leerlingen actief · 1 nog niet gestart');
+  const zonderActiviteit = tekst(vindAlle(boom, k => k.type === 'div' && /^Nog geen activiteit/.test(tekst(k)))[0]);
+  assert.match(zonderActiviteit, /Test Dirk/);
+  assert.doesNotMatch(zonderActiviteit, /Test Anna|Test Bram/, 'wie oefende, staat bij "nog niet gestart"');
+  R.ontkoppel();
+});
+
+test('leerkrachtdashboard: zoeken met leerlingen zonder adres crasht niet', async () => {
+  const { R } = await startDashboard();
+  for (const zoekterm of ['anna', 'x', 'gotalok']) {
+    const zoek = vindAlle(R.huidig(), k => k.type === 'input' && String(k.props.placeholder).includes('Zoek leerling'))[0];
+    zoek.props.onChange({ target: { value: zoekterm } });
+    await wacht(0);
+    const boom = R.huidig(); // gooit als het renderen faalde (vroeger: Cannot read properties of null)
+    if (zoekterm === 'anna') assert.ok(tekst(boom).includes('Test Anna') && !tekst(boom).includes('Test Bram'));
+    if (zoekterm === 'gotalok') assert.ok(tekst(boom).includes('Test Cas') && !tekst(boom).includes('Test Anna'));
+  }
   R.ontkoppel();
 });

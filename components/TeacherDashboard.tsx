@@ -33,6 +33,8 @@ interface SessionQuizResult {
 
 interface SessionWithProfile {
     id: string;
+    /** Wie de oefening maakte (profiles.id). Hierop worden leerlingen gegroepeerd, niet op het adres. */
+    user_id: string | null;
     score: number;
     total_questions: number;
     duration_seconds: number;
@@ -48,11 +50,27 @@ interface SessionWithProfile {
     total_words: number | null;
     profiles: {
         full_name: string | null;
-        email: string;
+        /** Leeg bij een Microsoft-aanmelding met het adres enkel in de metadata (hotfix SQL-3). */
+        email: string | null;
         klas: string | null;
         points: number | null;
     };
 }
+
+// ── Leerlingen zonder e-mailadres (hotfix SQL-3) ─────────────────────────────
+// profiles.email is leeg als Microsoft het adres enkel in de metadata zette. Het
+// dashboard groepeerde en zocht op het adres: zulke leerlingen werden samengevoegd,
+// stonden bij "nog niet gestart", en zoeken liet de hele app crashen.
+
+/** Zo staat een leerling zonder e-mailadres in het dashboard. */
+export const GEEN_EMAIL = '(geen e-mailadres)';
+
+/** Eén leerling = één sleutel: de user_id (nooit het adres, dat kan leeg zijn). */
+export const leerlingSleutel = (s: Pick<SessionWithProfile, 'id' | 'user_id'>): string => s.user_id ?? `sessie:${s.id}`;
+
+/** De naam van de leerling: volledige naam, anders het begin van het adres, anders "Onbekend". */
+export const leerlingNaam = (fullName: string | null | undefined, email: string | null | undefined): string =>
+    fullName || (email ? email.split('@')[0] : 'Onbekend');
 
 /** Geaggregeerde voortgang van één leerling op één opgeladen lijst, over alle sessies. */
 interface StudentListProgress {
@@ -67,7 +85,9 @@ interface StudentListProgress {
 }
 
 interface StudentSummary {
-    email: string;
+    /** leerlingSleutel: uniek per leerling, ook zonder adres. */
+    key: string;
+    email: string | null;
     name: string;
     sessions: SessionWithProfile[];
     totalSessions: number;
@@ -135,6 +155,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                     .from('practice_sessions')
                     .select(`
                         id,
+                        user_id,
                         score,
                         total_questions,
                         duration_seconds,
@@ -271,7 +292,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     const filteredSessions = useMemo(() => {
         return sessions.filter(session => {
             const sessionDate = new Date(session.completed_at);
-            const studentName = session.profiles.full_name || session.profiles.email;
+            const studentName = session.profiles.full_name || session.profiles.email || '';
             const category = session.file_name || session.context;
 
             // Date filter
@@ -282,7 +303,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
             // Search filter
             const matchesSearch = searchQuery === '' ||
                 studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                session.profiles.email.toLowerCase().includes(searchQuery.toLowerCase());
+                (session.profiles.email ?? '').toLowerCase().includes(searchQuery.toLowerCase());
 
             // Category filter
             const matchesCategory = categoryFilter === 'all' || category === categoryFilter;
@@ -300,7 +321,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
 
     // Statistics
     const stats = useMemo(() => {
-        const uniqueStudents = new Set(filteredSessions.map(s => s.profiles.email));
+        const uniqueStudents = new Set(filteredSessions.map(leerlingSleutel));
         const totalScore = filteredSessions.reduce((sum, s) => sum + s.score, 0);
         const totalQuestions = filteredSessions.reduce((sum, s) => sum + s.total_questions, 0);
         // Cap op 100% — oude data kan score > total_questions hebben door bugs in vorige scoring-logica.
@@ -327,14 +348,15 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         const studentMap = new Map<string, SessionWithProfile[]>();
 
         filteredSessions.forEach(session => {
-            const email = session.profiles.email;
-            if (!studentMap.has(email)) {
-                studentMap.set(email, []);
+            const key = leerlingSleutel(session);
+            if (!studentMap.has(key)) {
+                studentMap.set(key, []);
             }
-            studentMap.get(email)!.push(session);
+            studentMap.get(key)!.push(session);
         });
 
-        return Array.from(studentMap.entries()).map(([email, studentSessions]) => {
+        return Array.from(studentMap.entries()).map(([key, studentSessions]) => {
+            const email = studentSessions[0].profiles.email;
             const totalScore = studentSessions.reduce((sum, s) => sum + s.score, 0);
             const totalQuestions = studentSessions.reduce((sum, s) => sum + s.total_questions, 0);
             // Cap op 100% — bescherming tegen historische data corruption (score > total_questions).
@@ -347,8 +369,9 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
             const xp = Math.max(0, ...studentSessions.map(s => s.profiles.points ?? 0));
 
             return {
+                key,
                 email,
-                name: studentSessions[0].profiles.full_name || email.split('@')[0],
+                name: leerlingNaam(studentSessions[0].profiles.full_name, email),
                 sessions: studentSessions,
                 totalSessions: studentSessions.length,
                 avgScore,
@@ -377,10 +400,9 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     const allTimeActivity = useMemo(() => {
         const map = new Map<string, { count: number; lastActive: number }>();
         sessions.forEach(s => {
-            const email = s.profiles?.email;
-            if (!email) return;
-            const prev = map.get(email);
-            map.set(email, {
+            const key = leerlingSleutel(s);
+            const prev = map.get(key);
+            map.set(key, {
                 count: (prev?.count ?? 0) + 1,
                 lastActive: Math.max(prev?.lastActive ?? 0, new Date(s.completed_at).getTime()),
             });
@@ -391,15 +413,15 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
     // Leerlingen zónder sessie in de huidige periode — de "ontbrekende"
     // leerlingen die je collega miste.
     const inactiveStudents = useMemo(() => {
-        const activeEmails = new Set(studentSummaries.map(s => s.email));
+        const activeKeys = new Set(studentSummaries.map(s => s.key));
         return allStudents
-            .filter(p => !p.email || !activeEmails.has(p.email))
+            .filter(p => !activeKeys.has(p.id))
             .map(p => {
-                const activity = p.email ? allTimeActivity.get(p.email) : undefined;
+                const activity = allTimeActivity.get(p.id);
                 return {
                     id: p.id,
                     email: p.email,
-                    name: p.full_name || (p.email ? p.email.split('@')[0] : 'Onbekend'),
+                    name: leerlingNaam(p.full_name, p.email),
                     klas: p.klas,
                     onboarded: !!(p.finaliteit && p.jaargang),
                     totalSessions: activity?.count ?? 0,
@@ -473,8 +495,8 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
         const headers = ['Datum', 'Leerling', 'Email', 'Oefening', 'Score', 'Totaal', 'Percentage', 'Duur (sec)'];
         const rows = filteredSessions.map(s => [
             format(new Date(s.completed_at), "yyyy-MM-dd HH:mm"),
-            s.profiles.full_name || s.profiles.email.split('@')[0],
-            s.profiles.email,
+            leerlingNaam(s.profiles.full_name, s.profiles.email),
+            s.profiles.email ?? GEEN_EMAIL,
             s.file_name || s.context,
             s.score,
             s.total_questions,
@@ -769,10 +791,10 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <div className="font-medium text-slate-800">
-                                                        {session.profiles.full_name || session.profiles.email.split('@')[0]}
+                                                        {leerlingNaam(session.profiles.full_name, session.profiles.email)}
                                                     </div>
                                                     <div className="text-xs text-slate-400">
-                                                        {session.profiles.email}
+                                                        {session.profiles.email ?? GEEN_EMAIL}
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -976,13 +998,13 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                             {leaderboard.map((s, idx) => {
                                 const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
                                 return (
-                                    <li key={s.email} className="flex items-center gap-4 px-6 py-3 hover:bg-slate-50/60 transition">
+                                    <li key={s.key} className="flex items-center gap-4 px-6 py-3 hover:bg-slate-50/60 transition">
                                         <div className="w-9 text-center text-lg font-bold text-slate-500 shrink-0">
                                             {medal ?? <span className="text-sm">#{idx + 1}</span>}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="font-medium text-slate-800 truncate">{s.name}</div>
-                                            <div className="text-xs text-slate-400 truncate">{s.email}</div>
+                                            <div className="text-xs text-slate-400 truncate">{s.email ?? GEEN_EMAIL}</div>
                                         </div>
                                         {s.sessions[0]?.profiles.klas && (
                                             <span className="hidden sm:inline-flex text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
@@ -1015,12 +1037,12 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {studentSummaries.map((student) => (
                         <div
-                            key={student.email}
+                            key={student.key}
                             className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden"
                         >
                             <div
                                 className="p-4 cursor-pointer hover:bg-slate-50 transition"
-                                onClick={() => setExpandedStudent(expandedStudent === student.email ? null : student.email)}
+                                onClick={() => setExpandedStudent(expandedStudent === student.key ? null : student.key)}
                             >
                                 <div className="flex items-start justify-between">
                                     <div>
@@ -1037,7 +1059,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="text-xs text-slate-400">{student.email}</div>
+                                        <div className="text-xs text-slate-400">{student.email ?? GEEN_EMAIL}</div>
                                     </div>
                                     <div className={`text-2xl font-bold ${student.avgScore >= 70 ? 'text-green-600' : student.avgScore >= 50 ? 'text-orange-500' : 'text-red-500'}`}>
                                         {student.avgScore}%
@@ -1050,7 +1072,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                             </div>
 
                             {/* Expanded — twee secties: lijst-voortgang (NIEUW) + laatste sessies */}
-                            {expandedStudent === student.email && (() => {
+                            {expandedStudent === student.key && (() => {
                                 const listProgress = getStudentListProgress(student.sessions);
                                 return (
                                     <div className="border-t border-slate-100 bg-slate-50 p-3 max-h-96 overflow-y-auto space-y-3">
@@ -1142,7 +1164,7 @@ const TeacherDashboard: React.FC<DashboardProps> = ({ onBack }) => {
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="min-w-0">
                                                 <div className="font-semibold text-slate-700 truncate">{s.name}</div>
-                                                <div className="text-xs text-slate-400 truncate">{s.email || '—'}</div>
+                                                <div className="text-xs text-slate-400 truncate">{s.email || GEEN_EMAIL}</div>
                                             </div>
                                             {s.klas && (
                                                 <span className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{s.klas}</span>
