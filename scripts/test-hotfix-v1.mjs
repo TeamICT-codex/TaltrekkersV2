@@ -353,3 +353,75 @@ test('toegelaten domeinen: standaard gotalok.be, hetleercollectief.be en gomira.
   assert.deepEqual(metEnv.ALLOWED_EMAIL_DOMAINS, ['gotalok.be', 'hetleercollectief.be']);
   assert.equal(metEnv.isEmailDomainAllowed('a@gomira.be'), false, 'de env-lijst wint van de standaardlijst');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5. Afmelden mislukt nooit meer stil (EIGEN-E1)
+// ═════════════════════════════════════════════════════════════════════════════
+test('afmelden, de beslissing: wanneer wissen en welke sleutels', async () => {
+  const m = await laadAuth();
+  assert.equal(m.AFMELD_TIJDSLIMIET_MS, 5000);
+  const sleutels = [
+    'sb-abcdef-auth-token', 'sb-abcdef-auth-token-code-verifier', 'sb-abcdef-auth-token-user',
+    'taaltrekkers-data-v2', 'taltrekkers_selected_student', 'tvt2-weergave', 'sb-abcdef-auth-tokenx',
+    'xsb-abcdef-auth-token', 'sb--auth-token', 'sb-abcdef-auth-token-andere',
+  ];
+  assert.deepEqual(m.afmeldBeslissing('gelukt', sleutels), { wissen: [], melding: null });
+  for (const uitkomst of ['fout', 'tijdslimiet']) {
+    assert.deepEqual(m.afmeldBeslissing(uitkomst, sleutels), {
+      wissen: ['sb-abcdef-auth-token', 'sb-abcdef-auth-token-code-verifier', 'sb-abcdef-auth-token-user'],
+      melding: 'Afmelden bij de server lukte niet. Op dit toestel ben je wel afgemeld.',
+    }, uitkomst);
+  }
+  // Niets meer te wissen (bv. geen localStorage): toch de zin, nooit doen alsof het lukte.
+  assert.deepEqual(m.afmeldBeslissing('fout', []), { wissen: [], melding: m.MELDING_AFMELDEN_MISLUKT });
+});
+
+for (const [logout, uitleg] of [['500', 'serverfout'], ['netwerk', 'geen netwerk'], ['hangt', 'geen antwoord']]) {
+  test(`afmelden: ${uitleg} → de aanmelding op dit toestel gewist, afgemeld, met de zin`, async () => {
+    const s = await startAanmelding({ adres: TALOK_ADRES, logout });
+    assert.equal(s.waarde().user?.email, TALOK_ADRES);
+    localStorage.setItem(`${OPSLAGSLEUTEL}-code-verifier`, 'x');
+    localStorage.setItem('taaltrekkers-data-v2', '{}'); // lokale voortgang blijft (zoals vroeger)
+    const start = Date.now();
+    await s.waarde().signOut();
+    const duur = Date.now() - start;
+    await wacht(50);
+    const v = s.waarde();
+    assert.ok(s.omgeving.log.fetch.includes('POST /auth/v1/logout'), 'geen afmeldverzoek');
+    assert.deepEqual(localStorage.sleutels().filter(k => k.startsWith('sb-')), [], 'de aanmelding blijft op het toestel staan');
+    assert.equal(localStorage.getItem('taaltrekkers-data-v2'), '{}');
+    assert.equal(v.user, null, 'de app doet alsof de leerling nog aangemeld is');
+    assert.equal(v.session, null);
+    assert.equal(v.authError, 'Afmelden bij de server lukte niet. Op dit toestel ben je wel afgemeld.');
+    if (logout === 'hangt') assert.ok(duur >= 4900 && duur < 7000, `duurde ${duur} ms`);
+    else assert.ok(duur < 2000, `duurde ${duur} ms`);
+    stop(s);
+
+    // Opnieuw laden op hetzelfde toestel: niemand meer aangemeld.
+    const opnieuw = await startAanmelding({ adres: null });
+    assert.equal(opnieuw.waarde().user, null);
+    stop(opnieuw);
+  });
+}
+
+test('afmelden: het verzoek lukt → afgemeld, geen zin (zoals vroeger)', async () => {
+  const s = await startAanmelding({ adres: TALOK_ADRES, logout: 'ok' });
+  await s.waarde().signOut();
+  await wacht(50);
+  const v = s.waarde();
+  assert.ok(s.omgeving.log.fetch.includes('POST /auth/v1/logout'));
+  assert.deepEqual(localStorage.sleutels().filter(k => k.startsWith('sb-')), []);
+  assert.equal(v.user, null);
+  assert.equal(v.authError, null);
+  stop(s);
+});
+
+test('leeg scherm: lukt de afmelding van een geweigerd account niet, dan toch gewist (zin blijft die van het domein)', async () => {
+  const s = await startAanmelding({ adres: ANDER_ADRES, logout: '500' });
+  const v = s.waarde();
+  assert.equal(v.loading, false);
+  assert.equal(v.user, null);
+  assert.equal(v.authError, s.m.MELDING_ANDER_DOMEIN);
+  assert.equal(s.omgeving.sessieInOpslag(), false, 'de sessie van het geweigerde account blijft op het toestel');
+  stop(s);
+});

@@ -41,6 +41,64 @@ export const MELDING_ANDER_DOMEIN = 'Dit adres hoort niet bij een school die mee
 export const formatAllowedDomains = (): string =>
     ALLOWED_EMAIL_DOMAINS.map(d => `@${d}`).join(' of ');
 
+// ── Afmelden met een vangnet (hotfix EIGEN-E1) ─────────────────────────────
+// supabase.auth.signOut() wist de sessie NIET als het verzoek mislukt (netwerk,
+// serverfout): het geeft enkel { error } terug. Hangt het verzoek, dan komt er
+// nooit een antwoord. Op een gedeeld toestel bleef de volgende leerling zo in het
+// account van de vorige. Daarom: hoogstens AFMELD_TIJDSLIMIET_MS wachten, en lukte
+// het niet, dan de aanmelding op dit toestel zelf wissen en dat ook zeggen.
+// Zelfde sleutels en tijdslimiet als 2.0 (v2/features/auth/signOut.ts).
+
+/** Zo lang wachten we hoogstens op het afmeldverzoek. */
+export const AFMELD_TIJDSLIMIET_MS = 5_000;
+
+/** De sleutels waarin supabase-js de aanmelding bewaart: sb-<project>-auth-token, met -code-verifier en -user. */
+export const AANMELD_SLEUTEL = /^sb-.+-auth-token(-code-verifier|-user)?$/;
+
+/** De zin als het afmelden bij de server niet lukte. Nooit doen alsof het lukte. */
+export const MELDING_AFMELDEN_MISLUKT = 'Afmelden bij de server lukte niet. Op dit toestel ben je wel afgemeld.';
+
+export type AfmeldUitkomst = 'gelukt' | 'fout' | 'tijdslimiet';
+
+/**
+ * Na een afmeldpoging: welke sleutels moeten op dit toestel weg, en welke zin tonen we?
+ * Gelukt: niets (supabase-js wiste de sessie zelf). Een fout, een serverfout of geen antwoord:
+ * elke aanmeldsleutel die er nog staat, en de zin. Zuiver: krijgt de sleutels van localStorage.
+ */
+export function afmeldBeslissing(uitkomst: AfmeldUitkomst, sleutels: readonly string[]): { wissen: string[]; melding: string | null } {
+    if (uitkomst === 'gelukt') return { wissen: [], melding: null };
+    return { wissen: sleutels.filter(k => AANMELD_SLEUTEL.test(k)), melding: MELDING_AFMELDEN_MISLUKT };
+}
+
+/** Afmeldverzoek met tijdslimiet. Gooit nooit. */
+async function afmeldenMetTijdslimiet(): Promise<AfmeldUitkomst> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tijdslimiet = new Promise<AfmeldUitkomst>(ok => { timer = setTimeout(() => ok('tijdslimiet'), AFMELD_TIJDSLIMIET_MS); });
+    try {
+        return await Promise.race([
+            supabase.auth.signOut().then(({ error }): AfmeldUitkomst => (error ? 'fout' : 'gelukt'), (): AfmeldUitkomst => 'fout'),
+            tijdslimiet,
+        ]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+/** Afmelden; lukte het niet, dan de aanmelding op dit toestel wissen. Geeft de zin terug (null = gelukt). */
+async function afmeldenMetVangnet(): Promise<string | null> {
+    const uitkomst = await afmeldenMetTijdslimiet();
+    let sleutels: string[] = [];
+    try {
+        sleutels = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter((k): k is string => k !== null);
+    } catch { /* geen localStorage: supabase-js bewaarde de sessie enkel in het geheugen */ }
+    const { wissen, melding } = afmeldBeslissing(uitkomst, sleutels);
+    for (const k of wissen) {
+        try { localStorage.removeItem(k); } catch { /* niets meer aan te doen */ }
+    }
+    if (melding) console.warn(`Afmelden bij de server mislukt (${uitkomst}); ${wissen.length} aanmeldsleutel(s) op dit toestel gewist.`);
+    return melding;
+}
+
 /**
  * Derive een nette display-naam uit email: "thomas.aelbrecht@gotalok.be" → "Thomas Aelbrecht".
  * Wordt gebruikt als fallback wanneer profile.full_name (nog) leeg is, zodat de UI
@@ -227,7 +285,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 // op die callback (SIGNED_IN uit de bewaarde sessie). signOut() wacht op zijn beurt
                 // op dat opstarten: met een await bleef alles hangen (loading altijd true, een
                 // lege pagina, en de sessie bleef staan voor iedereen op dat toestel).
-                setTimeout(() => { void supabase.auth.signOut(); }, 0);
+                setTimeout(() => { void afmeldenMetVangnet(); }, 0);
                 return false;
             }
             return true;
@@ -408,7 +466,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setJaargangState(null);
         setNativeLanguageState(null);
         setAuthError(null);
-        await supabase.auth.signOut();
+        const melding = await afmeldenMetVangnet();
+        if (melding) {
+            // Het afmeldverzoek lukte niet: de aanmelding op dit toestel is gewist
+            // (supabase-js meldt dan geen SIGNED_OUT), dus de app zelf afmelden en het zeggen.
+            setSession(null);
+            setUser(null);
+            setRole(null);
+            setAuthError(melding);
+        }
     }, [clearSelectedStudent]);
 
     return (
