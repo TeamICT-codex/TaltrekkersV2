@@ -606,7 +606,7 @@ test('zwakke woorden vanuit Mijn voortgang: App geeft de aangemelde leerling mee
 // 6. Leerkrachtdashboard: een leeg e-mailadres voegt niets samen en crasht niets (SQL-3)
 // ═════════════════════════════════════════════════════════════════════════════
 // De echte TeacherDashboard.tsx met de kleine React; Supabase, useAuth en het AI-paneel zijn nagebootst.
-// Klas: Anna en Bram (Microsoft, adres enkel in de metadata: profiles.email leeg) en Cas oefenden; Dirk
+// Klas: leerling A en B (Microsoft, adres enkel in de metadata: profiles.email leeg) en C oefenden; D
 // (ook zonder adres) nog niet.
 let dashboardModule = null;
 const laadDashboard = async () => (dashboardModule ??= await bundel('leerkracht', 'components/TeacherDashboard.tsx', {
@@ -617,7 +617,7 @@ const laadDashboard = async () => (dashboardModule ??= await bundel('leerkracht'
 
 const ID = n => `00000000-0000-4000-8000-0000000000${n}`;
 const profiel = (id, naam, email) => ({ id, email, full_name: naam, klas: 'AF 5e', finaliteit: 'AF', jaargang: '5e', points: 10, created_at: '2026-10-01T08:00:00Z' });
-const KLAS = [profiel(ID('a1'), 'Test Anna', null), profiel(ID('b1'), 'Test Bram', null), profiel(ID('c1'), 'Test Cas', 'f0.hotfix.cas@gotalok.be'), profiel(ID('d1'), 'Test Dirk', null)];
+const KLAS = [profiel(ID('a1'), 'Test Leerling A', null), profiel(ID('b1'), 'Test Leerling B', null), profiel(ID('c1'), 'Test Leerling C', 'f0.hotfix.c@gotalok.be'), profiel(ID('d1'), 'Test Leerling D', null)];
 let sessieNr = 0;
 const sessie = p => ({
   id: `sessie-${++sessieNr}`, user_id: p.id, score: 8, total_questions: 10, duration_seconds: 60,
@@ -666,8 +666,8 @@ test('leerkrachtdashboard: de zuivere hulpjes (sleutel, naam, "(geen e-mailadres
   assert.equal(m.GEEN_EMAIL, '(geen e-mailadres)');
   assert.equal(m.leerlingSleutel({ id: 's1', user_id: ID('a1') }), ID('a1'));
   assert.notEqual(m.leerlingSleutel({ id: 's1', user_id: null }), m.leerlingSleutel({ id: 's2', user_id: null }), 'twee sessies zonder id worden geen leerling');
-  assert.equal(m.leerlingNaam('Test Anna', null), 'Test Anna');
-  assert.equal(m.leerlingNaam(null, 'f0.hotfix.cas@gotalok.be'), 'f0.hotfix.cas');
+  assert.equal(m.leerlingNaam('Test Leerling A', null), 'Test Leerling A');
+  assert.equal(m.leerlingNaam(null, 'f0.hotfix.c@gotalok.be'), 'f0.hotfix.c');
   assert.equal(m.leerlingNaam(null, null), 'Onbekend');
 });
 
@@ -676,35 +676,35 @@ test('leerkrachtdashboard: leerlingen zonder adres worden niet samengevoegd en t
   assert.match(vragen.find(v => v.tabel === 'practice_sessions').select, /\buser_id\b/, 'user_id wordt niet opgehaald');
   // Sessies: elke rij met de naam, en "(geen e-mailadres)" waar het adres leeg is.
   const sessiesTekst = tekst(R.huidig());
-  for (const naam of ['Test Anna', 'Test Bram', 'Test Cas']) assert.ok(sessiesTekst.includes(naam), naam);
-  assert.equal(sessiesTekst.split('(geen e-mailadres)').length - 1, 3, 'Anna 1x en Bram 2x zonder adres');
+  for (const naam of ['Test Leerling A', 'Test Leerling B', 'Test Leerling C']) assert.ok(sessiesTekst.includes(naam), naam);
+  assert.equal(sessiesTekst.split('(geen e-mailadres)').length - 1, 3, 'A 1x en B 2x zonder adres');
 
   knop(R.huidig(), 'Leerlingen').props.onClick();
   await wacht(0);
   const boom = R.huidig();
   const kaarten = vindAlle(boom, k => k.type === 'div' && [ID('a1'), ID('b1'), ID('c1')].includes(k.key));
-  assert.equal(kaarten.length, 3, 'Anna en Bram samengevoegd tot één leerling');
+  assert.equal(kaarten.length, 3, 'A en B samengevoegd tot één leerling');
   const perLeerling = Object.fromEntries(kaarten.map(k => [k.key, tekst(k)]));
-  assert.match(perLeerling[ID('a1')], /Test Anna.*\(geen e-mailadres\).*1 sessies/);
-  assert.match(perLeerling[ID('b1')], /Test Bram.*\(geen e-mailadres\).*2 sessies/);
-  assert.match(perLeerling[ID('c1')], /Test Cas.*f0\.hotfix\.cas@gotalok\.be.*1 sessies/);
+  assert.match(perLeerling[ID('a1')], /Test Leerling A.*\(geen e-mailadres\).*1 sessies/);
+  assert.match(perLeerling[ID('b1')], /Test Leerling B.*\(geen e-mailadres\).*2 sessies/);
+  assert.match(perLeerling[ID('c1')], /Test Leerling C.*f0\.hotfix\.c@gotalok\.be.*1 sessies/);
   const overzicht = vindAlle(boom, k => k.type === 'div' && /leerlingen actief/.test(tekst(k)) && !/Nog geen activiteit/.test(tekst(k))).at(-1);
   assert.equal(tekst(overzicht).replace(/\s+/g, ' ').trim(), '3 van 4 leerlingen actief · 1 nog niet gestart');
   const zonderActiviteit = tekst(vindAlle(boom, k => k.type === 'div' && /^Nog geen activiteit/.test(tekst(k)))[0]);
-  assert.match(zonderActiviteit, /Test Dirk/);
-  assert.doesNotMatch(zonderActiviteit, /Test Anna|Test Bram/, 'wie oefende, staat bij "nog niet gestart"');
+  assert.match(zonderActiviteit, /Test Leerling D/);
+  assert.doesNotMatch(zonderActiviteit, /Test Leerling A|Test Leerling B/, 'wie oefende, staat bij "nog niet gestart"');
   R.ontkoppel();
 });
 
 test('leerkrachtdashboard: zoeken met leerlingen zonder adres crasht niet', async () => {
   const { R } = await startDashboard();
-  for (const zoekterm of ['anna', 'x', 'gotalok']) {
+  for (const zoekterm of ['leerling a', 'x', 'gotalok']) {
     const zoek = vindAlle(R.huidig(), k => k.type === 'input' && String(k.props.placeholder).includes('Zoek leerling'))[0];
     zoek.props.onChange({ target: { value: zoekterm } });
     await wacht(0);
     const boom = R.huidig(); // gooit als het renderen faalde (vroeger: Cannot read properties of null)
-    if (zoekterm === 'anna') assert.ok(tekst(boom).includes('Test Anna') && !tekst(boom).includes('Test Bram'));
-    if (zoekterm === 'gotalok') assert.ok(tekst(boom).includes('Test Cas') && !tekst(boom).includes('Test Anna'));
+    if (zoekterm === 'leerling a') assert.ok(tekst(boom).includes('Test Leerling A') && !tekst(boom).includes('Test Leerling B'));
+    if (zoekterm === 'gotalok') assert.ok(tekst(boom).includes('Test Leerling C') && !tekst(boom).includes('Test Leerling A'));
   }
   R.ontkoppel();
 });
