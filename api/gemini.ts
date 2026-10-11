@@ -53,8 +53,12 @@ export const VRIJ_PAD_GRENZEN = {
   systeemInstructieTekens: 2_000,
   /** Tekens in responseSchema als JSON (de grootste van de app: ± 900). */
   schemaTekens: 5_000,
-  /** Uitvoertokens van het tekstmodel (de app: hoogstens ± 5 000, een quiz van 40 woorden). */
-  uitvoerTokens: 8_192,
+  /**
+   * Uitvoertokens van het tekstmodel. Een gewone oefening (hoogstens 40 woorden) heeft er hoogstens ± 6 400
+   * nodig, maar "Oefen zwakke woorden" vraagt één quiz voor alle zwakke woorden, zonder bovengrens: ± 160
+   * per vraag voor de zwaarste lijst, dus ruimte voor ± 100 woorden (hotfix H1, nalezing 11/10).
+   */
+  uitvoerTokens: 16_384,
 } as const;
 
 /** Enkel tekst; de proxy stuurt nooit bestanden of afbeeldingen door. */

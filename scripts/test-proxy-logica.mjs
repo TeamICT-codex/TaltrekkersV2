@@ -554,13 +554,13 @@ test('zonder contents en zonder frayer → 400; GET → 405; geen body → 400',
 // stuurt, mag door; elke vorm daarbuiten krijgt 400 met een korte code, zonder Gemini-aanroep.
 // De echte browsercode door de echte proxy: scripts/test-proxy-app.mjs.
 // De grenzen staan hier letterlijk (en niet geïmporteerd), zodat elke test ook tegen een oudere proxy loopt.
-const VRIJ_PAD_GRENZEN = { tekstTekens: 60_000, spraakTekens: 2_000, systeemInstructieTekens: 2_000, uitvoerTokens: 8_192 };
+const VRIJ_PAD_GRENZEN = { tekstTekens: 60_000, spraakTekens: 2_000, systeemInstructieTekens: 2_000, uitvoerTokens: 16_384 };
 
 test('vrij pad: de grenzen van de proxy zijn die van deze tests', async () => {
   const proxy = await import('../api/gemini.ts');
   for (const [k, v] of Object.entries(VRIJ_PAD_GRENZEN)) assert.equal(proxy.VRIJ_PAD_GRENZEN?.[k], v, k);
 });
-const TEKST_SERVER = { thinkingConfig: { thinkingBudget: 0 }, candidateCount: 1, maxOutputTokens: 8192 };
+const TEKST_SERVER = { thinkingConfig: { thinkingBudget: 0 }, candidateCount: 1, maxOutputTokens: 16384 };
 const SNEL = { thinkingConfig: { thinkingBudget: 0 } }; // getAiConfig('fast') in services/geminiService.ts
 const SCHEMA_QUIZ = {
   type: 'ARRAY',
@@ -680,7 +680,7 @@ const GEWEIGERD = [
   ['candidateCount 8', tekstVraag({ candidateCount: 8 }), 'te_veel_kandidaten'],
   ['candidateCount 2', tekstVraag({ ...SNEL, candidateCount: 2 }), 'te_veel_kandidaten'],
   ['maxOutputTokens 65 536', tekstVraag({ maxOutputTokens: 65536 }), 'te_veel_uitvoer'],
-  ['maxOutputTokens 8 193', tekstVraag({ maxOutputTokens: VRIJ_PAD_GRENZEN.uitvoerTokens + 1 }), 'te_veel_uitvoer'],
+  ['maxOutputTokens 16 385', tekstVraag({ maxOutputTokens: VRIJ_PAD_GRENZEN.uitvoerTokens + 1 }), 'te_veel_uitvoer'],
   ['maxOutputTokens als tekst', tekstVraag({ maxOutputTokens: '100' }), 'te_veel_uitvoer'],
   ['maxOutputTokens 0', tekstVraag({ maxOutputTokens: 0 }), 'te_veel_uitvoer'],
   ['thinkingBudget 24 576', tekstVraag({ thinkingConfig: { thinkingBudget: 24576 } }), 'denken_niet_toegelaten'],
@@ -736,6 +736,18 @@ test('vrij pad: het Frayer-pad blijft ongemoeid (meegestuurde config wordt geneg
   const r = await roep(p.handler, { frayer: FACTUUR, model: GEMINI_TEXT_MODEL, config: { tools: [{ googleSearch: {} }], candidateCount: 8 } });
   assert.equal(r.status, 200);
   assert.deepEqual(p.gemini.oproepen[0].config, FRAYER_GENERATION_CONFIG);
+});
+
+test('vrij pad: de uitvoergrens laat een quiz van 100 zwakke woorden toe (hoogstens ± 160 tokens per vraag)', async () => {
+  // "Oefen zwakke woorden" vraagt één quiz voor ALLE zwakke woorden (geen bovengrens in LearnedWordsView),
+  // zonder thinkingConfig (de instellingen hebben geen aiModel). Gemeten op de quizprompt van versie 1:
+  // gemiddeld ± 115, p90 ± 142, de zwaarste lijst ± 160 tokens per vraag. Een afgekapt antwoord is kapotte
+  // JSON: de quiz faalt dan na drie (betaalde) pogingen. Zonder grens (zoals vroeger) is het ook goed.
+  const p = maakProxy();
+  const r = await roep(p.handler, { feature: 'quiz', model: GEMINI_TEXT_MODEL, contents: 'Genereer een quiz ...', config: { responseMimeType: 'application/json', responseSchema: SCHEMA_QUIZ } });
+  assert.equal(r.status, 200);
+  const grens = p.gemini.oproepen[0].config?.maxOutputTokens ?? Infinity;
+  assert.ok(grens >= 100 * 160, `uitvoergrens ${grens} is te krap voor een quiz van 100 zwakke woorden`);
 });
 
 test('zonder GEMINI_API_KEY → 500 (ongewijzigd)', metOmgeving({ GEMINI_API_KEY: undefined }, async () => {

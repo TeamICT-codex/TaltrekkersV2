@@ -162,7 +162,7 @@ test('de echte app: elke AI-functie gaat door de proxy, en Gemini krijgt de conf
     } else {
       maxTekst = Math.max(maxTekst, n);
       const { thinkingConfig: _weg, ...rest } = b.config ?? {};
-      assert.deepEqual(g.config, { ...rest, thinkingConfig: { thinkingBudget: 0 }, candidateCount: 1, maxOutputTokens: 8192 }, `${b.feature}: config`);
+      assert.deepEqual(g.config, { ...rest, thinkingConfig: { thinkingBudget: 0 }, candidateCount: 1, maxOutputTokens: 16384 }, `${b.feature}: config`);
     }
   });
   assert.deepEqual([...features].sort(), [
