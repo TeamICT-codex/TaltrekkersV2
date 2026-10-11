@@ -198,6 +198,9 @@ test('de app merkt niets: zelfde exports, componenten en App ongewijzigd t.o.v. 
     'contexts/AuthContext.tsx',
     'hooks/usePracticeSession.ts',
     'components/TeacherDashboard.tsx',
+    // M3, blok 10: E en DO (een leerling van de eerste graad of verder studeren laat versie 1 niet vastlopen).
+    'components/PracticeSetup.tsx',
+    'components/KlasSettingsModal.tsx',
   ];
   const onverwacht = gewijzigd.filter(f => !toegelaten.includes(f));
   assert.deepEqual(onverwacht, [], `onverwacht gewijzigd t.o.v. main: ${onverwacht.join(', ')}`);

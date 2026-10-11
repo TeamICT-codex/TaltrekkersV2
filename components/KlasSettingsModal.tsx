@@ -55,7 +55,7 @@ const KlasSettingsModal: React.FC<KlasSettingsModalProps> = ({ isOpen, onClose }
     const handleFinaliteitClick = (f: Finaliteit) => {
         setSelectedFinaliteit(f);
         // Bij wijziging van finaliteit: reset jaargang alleen als die niet meer geldig is
-        if (selectedJaargang && !JAARGANGEN_PER_FINALITEIT[f].includes(selectedJaargang)) {
+        if (selectedJaargang && !(JAARGANGEN_PER_FINALITEIT[f] ?? []).includes(selectedJaargang)) {
             setSelectedJaargang(null);
         }
         setError(null);
@@ -150,7 +150,7 @@ const KlasSettingsModal: React.FC<KlasSettingsModalProps> = ({ isOpen, onClose }
                                 2. Kies je {selectedFinaliteit === 'OKAN' ? 'fase' : 'jaargang'}:
                             </p>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                {JAARGANGEN_PER_FINALITEIT[selectedFinaliteit].map(j => (
+                                {(JAARGANGEN_PER_FINALITEIT[selectedFinaliteit] ?? []).map(j => (
                                     <button
                                         key={j}
                                         type="button"

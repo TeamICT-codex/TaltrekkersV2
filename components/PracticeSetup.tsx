@@ -477,7 +477,7 @@ const PracticeSetup: React.FC<PracticeSetupProps> = ({
                                             3. Kies je {selectedFinaliteit === 'OKAN' ? 'fase' : 'jaargang'}:
                                         </p>
                                         <div className="grid grid-cols-4 gap-2">
-                                            {jaargangenPerFinaliteit[selectedFinaliteit].map(j => (
+                                            {(jaargangenPerFinaliteit[selectedFinaliteit] ?? []).map(j => (
                                                 <button
                                                     key={j}
                                                     onClick={() => setSelectedJaargang(j)}

@@ -819,3 +819,62 @@ test('leerkrachtdashboard: zoeken met leerlingen zonder adres crasht niet', asyn
   }
   R.ontkoppel();
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 6. M3 (CONTRACT-D 10.31): een leerling met finaliteit E of DO laat versie 1 niet vastlopen
+// ═════════════════════════════════════════════════════════════════════════════
+// Na blok 10 (migratie h) mag profiles ook E (eerste graad, 1e/2e) en DO (verder studeren) bevatten; een leerling
+// kiest ze in 2.0. Versie 1 kent enkel AF, DF en OKAN: "Vakspecifiek" (PracticeSetup) en het venster "Klas"
+// (KlasSettingsModal) zochten de jaren op zonder terugval en crashten (TypeError, de ErrorBoundary van versie 1).
+// Nu tonen ze dan geen jaren. Tegen de code zonder M3: HOTFIX_BRON=<commit> node scripts/test-hotfix-v1.mjs.
+const AUTH_NEP = 'export const useAuth = () => globalThis.__nepAuthWaarde ?? {};';
+
+test('M3: elke opzoeking van de jaren per finaliteit in versie 1 heeft een terugval (bewaker op de bron)', () => {
+  for (const rel of ['components/PracticeSetup.tsx', 'components/KlasSettingsModal.tsx']) {
+    // Beide schrijfwijzen: JAARGANGEN_PER_FINALITEIT[x] (KlasSettingsModal) en jaargangenPerFinaliteit[x] (PracticeSetup).
+    assert.doesNotMatch(bronVan(rel), /per_?finaliteit\[\w+\]\.(map|includes)\(/i, `${rel}: zonder ?? [] crasht versie 1 bij E of DO`);
+  }
+});
+
+test('M3: "Vakspecifiek" met een leerling van de eerste graad (E) of verder studeren (DO) crasht niet', async () => {
+  const m = await bundel('oefenkeuze', 'components/PracticeSetup.tsx', {
+    '(^|/)contexts/AuthContext$': AUTH_NEP,
+    '(^|/)CustomWordExtractor$': 'export default function CustomWordExtractor() { return null; }',
+  }, {}, true);
+  for (const [finaliteit, jaargang] of [['E', '1e'], ['DO', '5e']]) {
+    globalThis.__nepAuthWaarde = { finaliteit, jaargang };
+    const R = nieuweMiniReact();
+    globalThis.__miniReact = R;
+    R.mount(m.default, {
+      studentName: 'test leerling', nativeLanguage: '', aiModel: 'fast', isStoryModeUnlocked: false,
+      onStartPractice() {}, onStartStoryChallenge() {}, onShowDashboard() {},
+    });
+    await wacht(0);
+    knop(R.huidig(), 'Vakspecifiek').props.onClick();
+    await wacht(0);
+    const boom = R.huidig(); // gooit als het renderen faalde (vroeger: Cannot read properties of undefined (reading 'map'))
+    assert.match(tekst(boom), /Kies je jaargang/, `${finaliteit}: de stap met de jaren staat er (leeg)`);
+    // Een finaliteit van versie 1 kiezen werkt zoals vroeger.
+    knop(boom, '(DF)').props.onClick();
+    await wacht(0);
+    assert.ok(vindAlle(R.huidig(), k => k.type === 'button' && tekst(k) === '6e').length === 1, `${finaliteit}: daarna DF met zijn jaren`);
+    R.ontkoppel();
+  }
+});
+
+test('M3: het venster "Klas" met een leerling E of DO crasht niet; een andere finaliteit kiezen werkt', async () => {
+  const m = await bundel('klasvenster', 'components/KlasSettingsModal.tsx', { '(^|/)contexts/AuthContext$': AUTH_NEP }, {}, true);
+  for (const [finaliteit, jaargang] of [['E', '2e'], ['DO', '3e']]) {
+    globalThis.__nepAuthWaarde = { finaliteit, jaargang, nativeLanguage: null, setKlasInfo: async () => ({}), setNativeLanguage: async () => ({}) };
+    const R = nieuweMiniReact();
+    globalThis.__miniReact = R;
+    R.mount(m.default, { isOpen: true, onClose() {} });
+    await wacht(0);
+    const boom = R.huidig(); // gooit als het renderen faalde
+    assert.match(tekst(boom), /Kies je jaargang/, `${finaliteit}: de stap met de jaren staat er (leeg)`);
+    knop(boom, 'Arbeidsfinaliteit').props.onClick();
+    await wacht(0);
+    assert.ok(vindAlle(R.huidig(), k => k.type === 'button' && tekst(k) === '7e').length === 1, `${finaliteit}: daarna AF met zijn jaren`);
+    R.ontkoppel();
+  }
+});
