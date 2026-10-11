@@ -70,6 +70,19 @@ export function afmeldBeslissing(uitkomst: AfmeldUitkomst, sleutels: readonly st
     return { wissen: sleutels.filter(k => AANMELD_SLEUTEL.test(k)), melding: MELDING_AFMELDEN_MISLUKT };
 }
 
+/** Enkel de aanmelding zelf: sb-<project>-auth-token (niet de code-verifier of -user ernaast). */
+const AANMELDING = /^sb-.+-auth-token$/;
+
+/**
+ * Wiste een ander tabblad de aanmelding (storage-event)? Ja als die sleutel verdween, of als localStorage
+ * leeggemaakt werd (key null), en er nu geen aanmelding meer staat. Een nieuw of vernieuwd token
+ * (newValue gezet) en de sleutels ernaast tellen niet. Zuiver: krijgt de sleutels die er nu staan.
+ */
+export function aanmeldingEldersGewist(key: string | null, newValue: string | null, sleutels: readonly string[]): boolean {
+    if (key !== null && (!AANMELDING.test(key) || newValue !== null)) return false;
+    return !sleutels.some(k => AANMELDING.test(k));
+}
+
 /** Afmeldverzoek met tijdslimiet. Gooit nooit. */
 async function afmeldenMetTijdslimiet(): Promise<AfmeldUitkomst> {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -367,6 +380,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         });
 
         return () => subscription.unsubscribe();
+    }, []);
+
+    // Een ander tabblad wiste de aanmelding zelf, omdat het afmelden bij de server daar niet lukte
+    // (afmeldenMetVangnet). supabase-js meldt dat hier niet (geen SIGNED_OUT), en dit tabblad toonde
+    // nog de naam en de knoppen van de vorige leerling. Dan ook hier afmelden. Bij een gewone
+    // afmelding elders komt SIGNED_OUT ook; dit doet dan hetzelfde nog eens.
+    useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+        const bijWijziging = (e: StorageEvent) => {
+            let sleutels: string[];
+            try {
+                if (e.storageArea && e.storageArea !== localStorage) return;
+                sleutels = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter((k): k is string => k !== null);
+            } catch { return; }
+            if (!aanmeldingEldersGewist(e.key, e.newValue, sleutels)) return;
+            setSession(null);
+            setUser(null);
+            setRole(null);
+        };
+        window.addEventListener('storage', bijWijziging);
+        return () => window.removeEventListener('storage', bijWijziging);
     }, []);
 
     const setKlas = useCallback(async (newKlas: string) => {

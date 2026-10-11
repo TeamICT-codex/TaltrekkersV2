@@ -430,6 +430,53 @@ test('leeg scherm: lukt de afmelding van een geweigerd account niet, dan toch ge
   stop(s);
 });
 
+// Een ander tabblad wiste de aanmelding zelf, omdat het afmelden bij de server daar niet lukte (nalezing
+// 11/10, L3). supabase-js meldt dat in dit tabblad niet (geen SIGNED_OUT): het toonde nog de naam en de knoppen.
+test('afmelden elders, de beslissing: enkel als de aanmelding zelf weg is', async () => {
+  const m = await laadAuth();
+  const S = 'sb-abcdef-auth-token';
+  assert.equal(m.aanmeldingEldersGewist(S, null, ['taaltrekkers-data-v2']), true, 'gewist in een ander tabblad');
+  assert.equal(m.aanmeldingEldersGewist(null, null, []), true, 'localStorage leeggemaakt');
+  assert.equal(m.aanmeldingEldersGewist(S, '{"access_token":"x"}', [S]), false, 'een nieuw of vernieuwd token');
+  assert.equal(m.aanmeldingEldersGewist(S, null, [S]), false, 'intussen alweer aangemeld');
+  assert.equal(m.aanmeldingEldersGewist(null, null, [S]), false, 'leeggemaakt, maar intussen alweer aangemeld');
+  for (const k of [`${S}-code-verifier`, `${S}-user`, 'taltrekkers_selected_student', 'sb-abcdef-auth-tokenx']) {
+    assert.equal(m.aanmeldingEldersGewist(k, null, []), false, k);
+  }
+});
+
+test('afmelden elders: wist een ander tabblad de aanmelding zelf, dan is ook dit tabblad afgemeld', async () => {
+  const venster = new EventTarget(); // storage-events komen enkel binnen van andere tabbladen
+  globalThis.window = venster;
+  try {
+    const s = await startAanmelding({ adres: TALOK_ADRES });
+    assert.equal(s.waarde().user?.email, TALOK_ADRES);
+    const stuur = (key, newValue, storageArea = localStorage) => venster.dispatchEvent(Object.assign(new Event('storage'), { key, newValue, storageArea }));
+
+    // Geen afmelding: een vernieuwd token, de code-verifier na een e-maillink, sessionStorage, of een
+    // verouderd bericht terwijl de aanmelding er (alweer) staat.
+    stuur(OPSLAGSLEUTEL, localStorage.getItem(OPSLAGSLEUTEL));
+    stuur(`${OPSLAGSLEUTEL}-code-verifier`, null);
+    stuur(OPSLAGSLEUTEL, null, new Opslag());
+    stuur(OPSLAGSLEUTEL, null);
+    await wacht(20);
+    assert.equal(s.waarde().user?.email, TALOK_ADRES, 'afgemeld zonder dat de aanmelding weg is');
+
+    // Het andere tabblad wist de aanmelding zelf.
+    localStorage.removeItem(OPSLAGSLEUTEL);
+    stuur(OPSLAGSLEUTEL, null);
+    await wacht(20);
+    const v = s.waarde();
+    assert.equal(v.user, null, 'dit tabblad toont nog de vorige leerling');
+    assert.equal(v.session, null);
+    assert.equal(v.role, null);
+    assert.ok(!s.omgeving.log.fetch.includes('POST /auth/v1/logout'), 'dit tabblad hoeft de server niets te vragen');
+    stop(s);
+  } finally {
+    delete globalThis.window;
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // 3. "Oefen zwakke woorden" bewaart de oefening weer (BV1-01)
 // ═════════════════════════════════════════════════════════════════════════════
