@@ -30,6 +30,161 @@ function resolveModel(model: unknown): unknown {
   return model === LEGACY_TEXT_MODEL_ALIAS ? GEMINI_TEXT_MODEL : model;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// VRIJ PAD: ENKEL WAT DE APP ZELF STUURT (hotfix AI-01, debugronde 5/10)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Vroeger gingen contents en config ongewijzigd naar Gemini: elke aangemelde
+// gebruiker kon een pdf van 3 MB, tools, 8 kandidaten, 65 536 uitvoertokens en
+// een denkbudget meesturen. Nu bouwt de proxy de config opnieuw op uit een vaste
+// lijst (enkel wat services/geminiService.ts gebruikt) en laat ze in contents
+// enkel tekst door. Alles daarbuiten krijgt 400 met een korte code.
+
+/** Grenzen van het vrije pad. De app blijft er ruim onder. */
+export const VRIJ_PAD_GRENZEN = {
+  /** Tekens tekst voor het tekstmodel (de grootste aanvraag van de app: ± 26 000, woordextractie). */
+  tekstTekens: 60_000,
+  /** Tekens tekst voor het spraakmodel (de app: een woord, een uitleg of een zin). */
+  spraakTekens: 2_000,
+  /** Blokken in contents, en delen per blok (de app stuurt er telkens één). */
+  blokken: 4,
+  delenPerBlok: 4,
+  /** Tekens in systemInstruction (de app: ± 500). */
+  systeemInstructieTekens: 2_000,
+  /** Tekens in responseSchema als JSON (de grootste van de app: ± 900). */
+  schemaTekens: 5_000,
+  /** Uitvoertokens van het tekstmodel (de app: hoogstens ± 5 000, een quiz van 40 woorden). */
+  uitvoerTokens: 8_192,
+} as const;
+
+/** Enkel tekst; de proxy stuurt nooit bestanden of afbeeldingen door. */
+type TekstBlok = { role?: 'user'; parts: { text: string }[] };
+
+export type VrijeAanvraag =
+  | { ok: true; contents: string | TekstBlok[]; config: Record<string, unknown> }
+  | { ok: false; code: string; error: string };
+
+function isGewoonObject(waarde: unknown): waarde is Record<string, unknown> {
+  return typeof waarde === 'object' && waarde !== null && !Array.isArray(waarde);
+}
+
+const TEKST_CONFIG = new Set(['responseMimeType', 'responseSchema', 'systemInstruction', 'thinkingConfig', 'maxOutputTokens', 'candidateCount']);
+const SPRAAK_CONFIG = new Set(['responseModalities', 'speechConfig', 'candidateCount']);
+const MIME_TYPES = new Set(['application/json', 'text/plain']);
+
+/**
+ * Controleert een aanvraag op het vrije pad en bouwt contents en config opnieuw op.
+ * Het model is al gecontroleerd (ALLOWED_MODELS). Zuiver: geen netwerk, geen toestand.
+ */
+export function controleerVrijeAanvraag(model: string, contents: unknown, config: unknown): VrijeAanvraag {
+  const weiger = (code: string, uitleg: string): VrijeAanvraag => ({ ok: false, code, error: `Ongeldige AI-aanvraag: ${uitleg}` });
+  const spraak = model === GEMINI_TTS_MODEL;
+  const g = VRIJ_PAD_GRENZEN;
+
+  // ── contents: tekst, of een korte lijst blokken met enkel tekstdelen ──
+  let tekens = 0;
+  let schoneContents: string | TekstBlok[];
+  if (typeof contents === 'string') {
+    tekens = contents.length;
+    schoneContents = contents;
+  } else if (Array.isArray(contents)) {
+    if (contents.length === 0 || contents.length > g.blokken) return weiger('inhoud_ongeldig', 'te veel of geen blokken in contents.');
+    const blokken: TekstBlok[] = [];
+    for (const blok of contents) {
+      if (!isGewoonObject(blok) || Object.keys(blok).some(k => k !== 'parts' && k !== 'role')) {
+        return weiger('inhoud_ongeldig', 'een blok in contents heeft enkel parts (en eventueel role).');
+      }
+      if (blok.role !== undefined && blok.role !== 'user') return weiger('inhoud_ongeldig', 'enkel de rol user.');
+      const delen = blok.parts;
+      if (!Array.isArray(delen) || delen.length === 0 || delen.length > g.delenPerBlok) {
+        return weiger('inhoud_ongeldig', 'te veel of geen delen in een blok.');
+      }
+      const schoneDelen: { text: string }[] = [];
+      for (const deel of delen) {
+        if (!isGewoonObject(deel) || Object.keys(deel).length !== 1 || typeof deel.text !== 'string') {
+          return weiger('inhoud_ongeldig', 'enkel tekst, geen bestanden of afbeeldingen.');
+        }
+        tekens += deel.text.length;
+        schoneDelen.push({ text: deel.text });
+      }
+      blokken.push(blok.role === 'user' ? { role: 'user', parts: schoneDelen } : { parts: schoneDelen });
+    }
+    schoneContents = blokken;
+  } else {
+    return weiger('inhoud_ongeldig', 'contents is tekst of een lijst blokken.');
+  }
+  const maxTekens = spraak ? g.spraakTekens : g.tekstTekens;
+  if (tekens > maxTekens) return weiger('inhoud_te_lang', `hoogstens ${maxTekens} tekens.`);
+
+  // ── config: enkel de sleutels die de app gebruikt ──
+  if (config !== undefined && config !== null && !isGewoonObject(config)) return weiger('config_ongeldig', 'config is een object.');
+  const c: Record<string, unknown> = config ?? {};
+  const toegelaten = spraak ? SPRAAK_CONFIG : TEKST_CONFIG;
+  const verboden = Object.keys(c).find(k => !toegelaten.has(k));
+  if (verboden !== undefined) return weiger('config_niet_toegelaten', `"${verboden.slice(0, 40)}" mag niet in config.`);
+  if (c.candidateCount !== undefined && c.candidateCount !== 1) return weiger('te_veel_kandidaten', 'hoogstens 1 kandidaat.');
+
+  if (spraak) {
+    const modaliteiten = c.responseModalities;
+    if (modaliteiten !== undefined && !(Array.isArray(modaliteiten) && modaliteiten.length === 1 && modaliteiten[0] === 'AUDIO')) {
+      return weiger('spraakconfig_ongeldig', 'responseModalities is ["AUDIO"].');
+    }
+    const schoon: Record<string, unknown> = { responseModalities: ['AUDIO'] };
+    if (c.speechConfig !== undefined) {
+      const sc = c.speechConfig;
+      const vc = isGewoonObject(sc) ? sc.voiceConfig : undefined;
+      const pv = isGewoonObject(vc) ? vc.prebuiltVoiceConfig : undefined;
+      const stem = isGewoonObject(pv) ? pv.voiceName : undefined;
+      const enkelStem = isGewoonObject(sc) && Object.keys(sc).length === 1
+        && isGewoonObject(vc) && Object.keys(vc).length === 1
+        && isGewoonObject(pv) && Object.keys(pv).length === 1;
+      if (!enkelStem || typeof stem !== 'string' || !/^[A-Za-z]{1,40}$/.test(stem)) {
+        return weiger('spraakconfig_ongeldig', 'speechConfig bevat enkel de naam van een stem.');
+      }
+      schoon.speechConfig = { voiceConfig: { prebuiltVoiceConfig: { voiceName: stem } } };
+    }
+    return { ok: true, contents: schoneContents, config: schoon };
+  }
+
+  // Tekstmodel.
+  const schoon: Record<string, unknown> = {};
+  if (c.responseMimeType !== undefined) {
+    if (typeof c.responseMimeType !== 'string' || !MIME_TYPES.has(c.responseMimeType)) {
+      return weiger('config_niet_toegelaten', 'responseMimeType is application/json of text/plain.');
+    }
+    schoon.responseMimeType = c.responseMimeType;
+  }
+  if (c.responseSchema !== undefined) {
+    let lengte = Infinity;
+    try { lengte = JSON.stringify(c.responseSchema).length; } catch { /* blijft Infinity */ }
+    if (!isGewoonObject(c.responseSchema) || lengte > g.schemaTekens) {
+      return weiger('schema_ongeldig', `responseSchema is een object van hoogstens ${g.schemaTekens} tekens.`);
+    }
+    schoon.responseSchema = c.responseSchema;
+  }
+  if (c.systemInstruction !== undefined) {
+    if (typeof c.systemInstruction !== 'string' || c.systemInstruction.length > g.systeemInstructieTekens) {
+      return weiger('systeeminstructie_ongeldig', `systemInstruction is tekst van hoogstens ${g.systeemInstructieTekens} tekens.`);
+    }
+    schoon.systemInstruction = c.systemInstruction;
+  }
+  if (c.thinkingConfig !== undefined) {
+    const tc = c.thinkingConfig;
+    if (!isGewoonObject(tc) || Object.keys(tc).length !== 1 || tc.thinkingBudget !== 0) {
+      return weiger('denken_niet_toegelaten', 'thinkingBudget is altijd 0.');
+    }
+  }
+  const mot = c.maxOutputTokens;
+  if (mot !== undefined && (typeof mot !== 'number' || !Number.isInteger(mot) || mot < 1 || mot > g.uitvoerTokens)) {
+    return weiger('te_veel_uitvoer', `maxOutputTokens hoogstens ${g.uitvoerTokens}.`);
+  }
+  // Door de server vastgezet: niet denken (zoals de app altijd vroeg), één kandidaat, begrensde uitvoer.
+  schoon.thinkingConfig = { thinkingBudget: 0 };
+  schoon.candidateCount = 1;
+  schoon.maxOutputTokens = typeof mot === 'number' ? mot : g.uitvoerTokens;
+  return { ok: true, contents: schoneContents, config: schoon };
+}
+
 // Rate limiting: in-memory map met sliding window per identiteit (user-id of IP).
 // Werkt binnen één Vercel function-instance; bij grote schaal upgrade naar Upstash/Redis.
 const RATE_LIMITS = {
@@ -464,8 +619,18 @@ export function createHandler(deps: ProxyAfhankelijkheden = echteAfhankelijkhede
         return res.status(400).json({ error: `Model "${String(model)}" is not allowed` });
       }
 
+      // Enkel wat de app zelf stuurt: config opnieuw opgebouwd, enkel tekst (zie controleerVrijeAanvraag).
+      const aanvraag = controleerVrijeAanvraag(model, contents, config);
+      if (!aanvraag.ok) {
+        return res.status(400).json({ error: aanvraag.error, code: aanvraag.code });
+      }
+
       const ai = deps.maakGemini(apiKey);
-      const response = await ai.models.generateContent({ model, contents, config });
+      const response = await ai.models.generateContent({
+        model,
+        contents: aanvraag.contents,
+        config: aanvraag.config as GenerateContentConfig,
+      });
       const usage = toUsagePayload(response.usageMetadata);
 
       // Welk model Google ECHT gebruikte. Sinds het vastpinnen op GEMINI_TEXT_MODEL
