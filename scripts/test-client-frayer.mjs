@@ -194,6 +194,10 @@ test('de app merkt niets: zelfde exports, componenten en App ongewijzigd t.o.v. 
     'components/NieuwsButton.tsx',
     'components/NieuwsModal.tsx',
     'data/nieuws.ts',
+    // Hotfix 11/10: leeg scherm, afmelden, zwakke woorden, leerkrachtdashboard.
+    'contexts/AuthContext.tsx',
+    'hooks/usePracticeSession.ts',
+    'components/TeacherDashboard.tsx',
   ];
   const onverwacht = gewijzigd.filter(f => !toegelaten.includes(f));
   assert.deepEqual(onverwacht, [], `onverwacht gewijzigd t.o.v. main: ${onverwacht.join(', ')}`);
