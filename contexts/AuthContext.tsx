@@ -33,6 +33,9 @@ export const isEmailDomainAllowed = (email: string | null | undefined): boolean 
     return ALLOWED_EMAIL_DOMAINS.some(domain => lower.endsWith(`@${domain}`));
 };
 
+/** De zin bij een account van een school (of een adres) die niet meedoet. */
+export const MELDING_ANDER_DOMEIN = 'Dit adres hoort niet bij een school die meedoet. Meld je aan met het e-mailadres van je school.';
+
 /** Mens-leesbare lijst voor foutmeldingen: "@gotalok.be of @hetleercollectief.be" */
 export const formatAllowedDomains = (): string =>
     ALLOWED_EMAIL_DOMAINS.map(d => `@${d}`).join(' of ');
@@ -198,7 +201,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Bij mismatch: signOut + foutmelding tonen via authError state.
         // Belangrijke veiligheidslaag: Supabase Azure-provider laat alle users uit
         // de tenant toe (Het Leercollectief = meerdere domeinen). Wij beperken hier
-        // tot enkel onze schoolgroep (@gotalok.be + @hetleercollectief.be).
+        // tot de scholen die meedoen (ALLOWED_EMAIL_DOMAINS).
         const enforceEmailDomain = async (currentUser: User): Promise<boolean> => {
             const email = extractUserEmail(currentUser);
             // Diagnose-log — ook zichtbaar in productie zodat we bij login-issues
@@ -217,11 +220,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             });
             if (!isEmailDomainAllowed(email)) {
                 console.warn(`Login geweigerd: "${email}" valt niet binnen toegestane domeinen (${ALLOWED_EMAIL_DOMAINS.join(', ')})`);
-                setAuthError(
-                    `Alleen schoolaccounts (${formatAllowedDomains()}) zijn toegestaan. ` +
-                    `Je bent uitgelogd — log opnieuw in met je Office 365-schoolaccount.`
-                );
-                await supabase.auth.signOut();
+                setAuthError(MELDING_ANDER_DOMEIN);
+                // NIET wachten op de afmelding (hotfix "leeg scherm"). Deze functie loopt ook
+                // binnen de callback van onAuthStateChange, en bij het opstarten wacht supabase-js
+                // op die callback (SIGNED_IN uit de bewaarde sessie). signOut() wacht op zijn beurt
+                // op dat opstarten: met een await bleef alles hangen (loading altijd true, een
+                // lege pagina, en de sessie bleef staan voor iedereen op dat toestel).
+                setTimeout(() => { void supabase.auth.signOut(); }, 0);
                 return false;
             }
             return true;
@@ -229,12 +234,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         // Reageren op auth events
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            // Een geweigerd account geldt bij geen enkel event als aangemeld (ook niet bij
+            // INITIAL_SESSION of TOKEN_REFRESHED, die nog komen vóór de afmelding rond is).
+            if (session?.user) {
+                const allowed = event === 'SIGNED_IN'
+                    ? await enforceEmailDomain(session.user)
+                    : isEmailDomainAllowed(extractUserEmail(session.user));
+                if (!allowed) {
+                    setSession(null);
+                    setUser(null);
+                    setLoading(false);
+                    return;
+                }
+            }
+
             setSession(session);
             setUser(session?.user ?? null);
 
             if (event === 'SIGNED_IN' && session?.user) {
-                const allowed = await enforceEmailDomain(session.user);
-                if (!allowed) { setLoading(false); return; }
                 processUserProfile(session.user);
             } else if (event === 'SIGNED_OUT') {
                 setRole(null);
@@ -264,13 +281,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         // Initial session check
         supabase.auth.getSession().then(async ({ data: { session } }) => {
+            if (session?.user && !(await enforceEmailDomain(session.user))) {
+                setSession(null);
+                setUser(null);
+                setLoading(false);
+                return;
+            }
             setSession(session);
             setUser(session?.user ?? null);
 
             if (session?.user) {
-                const allowed = await enforceEmailDomain(session.user);
-                if (!allowed) { setLoading(false); return; }
-
                 supabase
                     .from('profiles')
                     .select('role, klas, finaliteit, jaargang, native_language')

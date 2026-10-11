@@ -1,0 +1,342 @@
+// Tests van de hotfix in versie 1 (tak fix/mira-aanmelding), zonder browser en zonder netwerk.
+//
+// De ECHTE broncode (contexts/AuthContext.tsx, ...) wordt met esbuild (dat Vite al meebrengt) gebundeld met:
+//  - een kleine React in het geheugen: genoeg hooks om een component of een hook te laten lopen;
+//  - de ECHTE auth-js van Supabase (dezelfde versie als de app), met opslag in het geheugen en een
+//    nagebootste aanmeldserver op een .invalid-adres (elk verzoek wordt bijgehouden);
+//  - nagebootste services/supabase (from) en services/db.
+//
+// Start: npm run test:hotfix
+// Zelfde tests tegen de code op main (om te zien dat ze zonder de hotfix falen):
+//   HOTFIX_BRON=main node scripts/test-hotfix-v1.mjs
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative } from 'node:path';
+import test, { after } from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const requireRoot = createRequire(join(ROOT, 'package.json'));
+const esbuild = createRequire(requireRoot.resolve('vite/package.json'))('esbuild');
+const { GoTrueClient } = createRequire(requireRoot.resolve('@supabase/supabase-js'))('@supabase/auth-js');
+const BRON = process.env.HOTFIX_BRON || null; // bv. 'main': elk bronbestand uit git show main:…
+
+const UIT = mkdtempSync(join(tmpdir(), 'tvt-hotfix-'));
+after(() => rmSync(UIT, { recursive: true, force: true }));
+
+const wacht = ms => new Promise(ok => setTimeout(ok, ms));
+console.log = () => {}; // de diagnoselog van AuthContext niet tonen
+const waarschuwingen = [];
+console.warn = (...delen) => waarschuwingen.push(delen.map(String).join(' '));
+console.error = (...delen) => waarschuwingen.push(delen.map(String).join(' '));
+
+// ── localStorage in het geheugen (de app en supabase-js delen hem, zoals in de browser) ──
+class Opslag {
+  #kaart = new Map();
+  get length() { return this.#kaart.size; }
+  key(i) { return [...this.#kaart.keys()][i] ?? null; }
+  getItem(k) { return this.#kaart.has(k) ? this.#kaart.get(k) : null; }
+  setItem(k, v) { this.#kaart.set(String(k), String(v)); }
+  removeItem(k) { this.#kaart.delete(k); }
+  clear() { this.#kaart.clear(); }
+  sleutels() { return [...this.#kaart.keys()]; }
+}
+globalThis.localStorage = new Opslag();
+
+// ── Een kleine React ─────────────────────────────────────────────────────────
+// useState plant een nieuwe render (microtask, gebundeld zoals React), useEffect loopt na de render als
+// de afhankelijkheden veranderden, useMemo/useCallback onthouden per afhankelijkheden.
+function nieuweMiniReact() {
+  let comp = null;
+  let props = null;
+  let slots = [];
+  let idx = 0;
+  let laatste = null;
+  let gepland = false;
+  let effecten = [];
+  const zelfde = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => Object.is(x, b[i]));
+  const plan = () => {
+    if (gepland || !comp) return;
+    gepland = true;
+    queueMicrotask(() => { gepland = false; if (comp) render(); });
+  };
+  function render() {
+    idx = 0;
+    laatste = comp(props);
+    const nu = effecten;
+    effecten = [];
+    for (const e of nu) e();
+  }
+  const R = {
+    createContext(standaard) { const ctx = { _standaard: standaard }; ctx.Provider = { _context: ctx }; return ctx; },
+    useContext: ctx => ctx._standaard,
+    useState(begin) {
+      const i = idx++;
+      if (!(i in slots)) {
+        const slot = { waarde: typeof begin === 'function' ? begin() : begin };
+        slot.zet = nieuw => {
+          const v = typeof nieuw === 'function' ? nieuw(slot.waarde) : nieuw;
+          if (Object.is(v, slot.waarde)) return;
+          slot.waarde = v;
+          plan();
+        };
+        slots[i] = slot;
+      }
+      return [slots[i].waarde, slots[i].zet];
+    },
+    useRef(begin) { const i = idx++; if (!(i in slots)) slots[i] = { current: begin }; return slots[i]; },
+    useMemo(fn, deps) {
+      const i = idx++;
+      if (!(i in slots) || !zelfde(slots[i].deps, deps)) slots[i] = { waarde: fn(), deps };
+      return slots[i].waarde;
+    },
+    useCallback(fn, deps) { return R.useMemo(() => fn, deps); },
+    useEffect(fn, deps) {
+      const i = idx++;
+      const oud = slots[i];
+      if (oud && zelfde(oud.deps, deps)) return;
+      slots[i] = { deps, opruimen: oud?.opruimen };
+      effecten.push(() => {
+        if (typeof slots[i].opruimen === 'function') slots[i].opruimen();
+        slots[i].opruimen = fn();
+      });
+    },
+    mount(c, p) { comp = c; props = p; slots = []; render(); },
+    huidig: () => laatste,
+    ontkoppel() {
+      for (const s of slots) if (s && typeof s.opruimen === 'function') s.opruimen();
+      comp = null;
+    },
+  };
+  return R;
+}
+
+const REACT_MODULE = `
+const R = () => globalThis.__miniReact;
+// createContext loopt al bij het laden van de module, vóór een render: zonder toestand.
+export const createContext = standaard => { const ctx = { _standaard: standaard }; ctx.Provider = { _context: ctx }; return ctx; };
+export const useContext = (...a) => R().useContext(...a);
+export const useState = (...a) => R().useState(...a);
+export const useRef = (...a) => R().useRef(...a);
+export const useMemo = (...a) => R().useMemo(...a);
+export const useCallback = (...a) => R().useCallback(...a);
+export const useEffect = (...a) => R().useEffect(...a);
+export const Fragment = 'Fragment';
+export default { createContext, useContext, useState, useRef, useMemo, useCallback, useEffect, Fragment };`;
+const JSX_MODULE = `
+export const jsx = (type, props) => ({ type, props });
+export const jsxs = jsx;
+export const jsxDEV = jsx;
+export const Fragment = 'Fragment';`;
+
+// ── Bundelen ─────────────────────────────────────────────────────────────────
+/**
+ * Bundelt een bronbestand van de app met de kleine React en de gegeven vervangers
+ * ({ regex op het importpad: broncode }). Geeft de geladen module terug.
+ */
+async function bundel(naam, bronPad, vervangers = {}) {
+  const ingang = join(ROOT, bronPad).replace(/\\/g, '/');
+  const uit = join(UIT, `${naam}.mjs`);
+  const virtueel = [
+    [/^react$/, REACT_MODULE],
+    [/^react\/jsx-(dev-)?runtime$/, JSX_MODULE],
+    ...Object.entries(vervangers).map(([bron, code]) => [new RegExp(bron), code]),
+  ];
+  await esbuild.build({
+    stdin: { contents: `export * from ${JSON.stringify(ingang)};`, resolveDir: ROOT, loader: 'js' },
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    outfile: uit,
+    logLevel: 'silent',
+    jsx: 'automatic',
+    define: { 'import.meta.env': '{"DEV":false,"PROD":true}' },
+    plugins: [{
+      name: 'hotfix-test',
+      setup(b) {
+        b.onResolve({ filter: /.*/ }, args => {
+          const i = virtueel.findIndex(([re]) => re.test(args.path));
+          return i >= 0 ? { path: `v${i}`, namespace: 'virtueel' } : undefined;
+        });
+        b.onLoad({ filter: /.*/, namespace: 'virtueel' }, args => ({ contents: virtueel[Number(args.path.slice(1))][1], loader: 'js', resolveDir: ROOT }));
+        if (BRON) {
+          // Elk bronbestand van de app zoals het op BRON staat (bv. main).
+          b.onLoad({ filter: /\.(tsx?|jsx?)$/ }, args => {
+            const rel = relative(ROOT, args.path).replace(/\\/g, '/');
+            if (rel.startsWith('..') || rel.startsWith('node_modules/')) return undefined;
+            const inhoud = execFileSync('git', ['show', `${BRON}:${rel}`], { cwd: ROOT, encoding: 'utf8' });
+            return { contents: inhoud, loader: args.path.endsWith('x') ? 'tsx' : 'ts', resolveDir: dirname(args.path) };
+          });
+        }
+      },
+    }],
+  });
+  return import(pathToFileURL(uit).href);
+}
+
+// ── Supabase nagebootst: de ECHTE auth-js, opslag = localStorage, server op .invalid ──
+const OPSLAGSLEUTEL = 'sb-nepproject-auth-token';
+const nu = () => Math.floor(Date.now() / 1000);
+
+/** Slot zoals navigator.locks: exclusief per naam, toekenning pas in een volgende taak (volgorde van een echte browser). */
+function browserSlot() {
+  const rijen = new Map();
+  return async (naam, _timeout, fn) => {
+    const vorige = rijen.get(naam) || Promise.resolve();
+    let vrij;
+    const mijn = new Promise(ok => { vrij = ok; });
+    rijen.set(naam, vorige.then(() => mijn));
+    await vorige;
+    await new Promise(ok => setTimeout(ok, 0));
+    try { return await fn(); } finally { vrij(); }
+  };
+}
+
+/**
+ * Zet een scenario klaar: een bewaarde sessie voor `adres` (of geen), en hoe de server op /logout
+ * antwoordt ('ok', '500', 'netwerk' of 'hangt').
+ */
+function nepSupabase({ adres = null, verlopen = false, slot = 'browser', logout = 'ok' } = {}) {
+  localStorage.clear();
+  const gebruiker = adres && {
+    id: '00000000-0000-4000-8000-00000000b001', aud: 'authenticated', role: 'authenticated', email: adres,
+    app_metadata: { provider: 'email' }, user_metadata: {}, created_at: new Date().toISOString(),
+  };
+  if (gebruiker) {
+    localStorage.setItem(OPSLAGSLEUTEL, JSON.stringify({
+      access_token: 'nep-toegang', refresh_token: 'nep-vernieuw', token_type: 'bearer', expires_in: 3600,
+      expires_at: verlopen ? nu() - 30 : nu() + 3600, user: gebruiker,
+    }));
+  }
+  const log = { fetch: [], from: [] };
+  const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  const nepFetch = async (url, init = {}) => {
+    const pad = String(url).replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+    log.fetch.push(`${(init.method || 'GET').toUpperCase()} ${pad}`);
+    if (pad.endsWith('/logout')) {
+      if (logout === '500') return json(500, { code: 500, error_code: 'unexpected_failure', msg: 'serverfout' });
+      if (logout === 'netwerk') throw new TypeError('fetch failed');
+      if (logout === 'hangt') return new Promise(() => {});
+      return new Response(null, { status: 204 });
+    }
+    if (pad.endsWith('/token')) {
+      return json(200, { access_token: 'nep-toegang-2', refresh_token: 'nep-vernieuw-2', token_type: 'bearer', expires_in: 3600, expires_at: nu() + 3600, user: gebruiker });
+    }
+    if (pad.endsWith('/user')) return json(200, gebruiker ?? {});
+    return json(404, { msg: 'niet nagebootst' });
+  };
+  const auth = new GoTrueClient({
+    url: 'https://nepproject.invalid/auth/v1',
+    storageKey: OPSLAGSLEUTEL,
+    storage: localStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    fetch: nepFetch,
+    ...(slot === 'browser' ? { lock: browserSlot() } : {}),
+  });
+  const from = tabel => {
+    const vraag = { tabel, ops: [] };
+    log.from.push(vraag);
+    const keten = {
+      select(k) { vraag.ops.push(`select ${k}`); return keten; },
+      eq(k) { vraag.ops.push(`eq ${k}`); return keten; },
+      single: async () => ({ data: { role: 'student', full_name: 'Test Leerling', klas: 'AF 5e', finaliteit: 'AF', jaargang: '5e', native_language: null }, error: null }),
+    };
+    return keten;
+  };
+  return { supabase: { auth, from }, log, sessieInOpslag: () => localStorage.getItem(OPSLAGSLEUTEL) !== null };
+}
+
+const SUPABASE_MODULE = `export const supabase = new Proxy({}, { get: (_, k) => globalThis.__nepSupabase[k] });`;
+const DB_MODULE = `
+const db = () => globalThis.__nepDb ?? {};
+const lukt = async () => ({ success: true });
+export const updateProfileKlas = (...a) => (db().updateProfileKlas ?? lukt)(...a);
+export const updateProfileKlasInfo = (...a) => (db().updateProfileKlasInfo ?? lukt)(...a);
+export const updateProfileNativeLanguage = (...a) => (db().updateProfileNativeLanguage ?? lukt)(...a);
+export const upgradeToTeacher = (...a) => (db().upgradeToTeacher ?? lukt)(...a);
+export const saveSessionToSupabase = (...a) => (db().saveSessionToSupabase ?? lukt)(...a);
+export const updateWordProgressInSupabase = (...a) => (db().updateWordProgressInSupabase ?? lukt)(...a);`;
+
+let authModule = null;
+async function laadAuth() {
+  authModule ??= await bundel('auth', 'contexts/AuthContext.tsx', {
+    '(^|/)services/supabase$': SUPABASE_MODULE,
+    '(^|/)services/db$': DB_MODULE,
+  });
+  return authModule;
+}
+
+/** AuthProvider opstarten in een scenario en wachten tot alles rustig is. Geeft de waarde van de context. */
+async function startAanmelding(scenario, wachtMs = 400) {
+  const m = await laadAuth();
+  const omgeving = nepSupabase(scenario);
+  globalThis.__nepSupabase = omgeving.supabase;
+  const R = nieuweMiniReact();
+  globalThis.__miniReact = R;
+  R.mount(m.AuthProvider, { children: 'APP' });
+  await wacht(wachtMs);
+  return { m, R, omgeving, waarde: () => R.huidig().props.value };
+}
+
+function stop({ R, omgeving }) {
+  R.ontkoppel();
+  omgeving.supabase.auth.stopAutoRefresh?.();
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 1. Geen leeg scherm meer voor een adres buiten de toegelaten domeinen
+// ═════════════════════════════════════════════════════════════════════════════
+const ANDER_ADRES = 'iemand@andere-school.invalid';
+const TALOK_ADRES = 'f0.hotfix.leerling@gotalok.be';
+
+for (const slot of ['browser', 'node']) {
+  for (const verlopen of [false, true]) {
+    test(`leeg scherm: ander domein, ${verlopen ? 'verlopen' : 'geldige'} bewaarde sessie (${slot}) → aanmeldscherm met de zin, afgemeld, niets gelezen`, async () => {
+      const s = await startAanmelding({ adres: ANDER_ADRES, verlopen, slot });
+      const v = s.waarde();
+      assert.equal(v.loading, false, 'loading blijft true: de pagina blijft leeg');
+      assert.equal(v.user, null);
+      assert.equal(v.session, null);
+      assert.equal(v.authError, 'Dit adres hoort niet bij een school die meedoet. Meld je aan met het e-mailadres van je school.');
+      assert.equal(v.authError, s.m.MELDING_ANDER_DOMEIN);
+      assert.ok(s.omgeving.log.fetch.includes('POST /auth/v1/logout'), `geen afmelding: ${s.omgeving.log.fetch.join(', ')}`);
+      assert.equal(s.omgeving.sessieInOpslag(), false, 'de sessie blijft op het toestel');
+      assert.equal(s.omgeving.log.from.length, 0, 'het profiel van een geweigerd account werd gelezen');
+      assert.equal(localStorage.getItem('taltrekkers_selected_student'), null, 'de naam van een geweigerd account werd bewaard');
+      stop(s);
+
+      // Het toestel blijft niet leeg voor de volgende: opnieuw laden geeft gewoon het aanmeldscherm.
+      const opnieuw = await startAanmelding({ adres: null, slot });
+      assert.equal(opnieuw.waarde().loading, false);
+      assert.equal(opnieuw.waarde().user, null);
+      stop(opnieuw);
+    });
+  }
+}
+
+for (const adres of [TALOK_ADRES, 'f0.hotfix.leerkracht@hetleercollectief.be']) {
+  test(`leeg scherm: een toegelaten adres (${adres.split('@')[1]}) merkt niets`, async () => {
+    const s = await startAanmelding({ adres });
+    const v = s.waarde();
+    assert.equal(v.loading, false);
+    assert.equal(v.user?.email, adres);
+    assert.equal(v.authError, null);
+    assert.ok(!s.omgeving.log.fetch.includes('POST /auth/v1/logout'), 'een toegelaten account werd afgemeld');
+    assert.equal(s.omgeving.sessieInOpslag(), true);
+    stop(s);
+  });
+}
+
+test('leeg scherm: zonder sessie gewoon het aanmeldscherm', async () => {
+  const s = await startAanmelding({ adres: null });
+  assert.equal(s.waarde().loading, false);
+  assert.equal(s.waarde().user, null);
+  assert.equal(s.waarde().authError, null);
+  assert.deepEqual(s.omgeving.log.fetch, []);
+  stop(s);
+});
