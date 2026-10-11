@@ -323,7 +323,8 @@ for (const slot of ['browser', 'node']) {
   }
 }
 
-for (const adres of [TALOK_ADRES, 'f0.hotfix.leerkracht@hetleercollectief.be', 'f0.hotfix.leerling@gomira.be']) {
+// gomira.be hoort hier pas bij zodra fase 0 live is (zie de test 'toegelaten domeinen').
+for (const adres of [TALOK_ADRES, 'f0.hotfix.leerkracht@hetleercollectief.be']) {
   test(`leeg scherm: een toegelaten adres (${adres.split('@')[1]}) merkt niets`, async () => {
     const s = await startAanmelding({ adres });
     const v = s.waarde();
@@ -345,17 +346,20 @@ test('leeg scherm: zonder sessie gewoon het aanmeldscherm', async () => {
   stop(s);
 });
 
-test('toegelaten domeinen: standaard gotalok.be, hetleercollectief.be en gomira.be; de env-override blijft werken', async () => {
+// gomira.be staat NIET in de standaardlijst zolang fase 0 (de schoolgrens in de databank) niet live is:
+// zonder die grens zouden leerkrachten van Talok en Mira elkaars leerlingen zien (nalezing hotfix H2).
+// De testbouw zet gomira.be via de env-override; live komt het mee met de livegang van fase 0.
+test('toegelaten domeinen: standaard enkel gotalok.be en hetleercollectief.be; de env-override (met gomira.be) blijft werken', async () => {
   const m = await laadAuth();
-  assert.deepEqual(m.ALLOWED_EMAIL_DOMAINS, ['gotalok.be', 'hetleercollectief.be', 'gomira.be']);
-  for (const adres of ['a@gotalok.be', 'B@GoMira.be', 'c@hetleercollectief.be']) assert.equal(m.isEmailDomainAllowed(adres), true, adres);
-  for (const adres of ['a@gomira.be.invalid', 'a@xgomira.be', 'gomira.be', '', null]) assert.equal(m.isEmailDomainAllowed(adres), false, String(adres));
+  assert.deepEqual(m.ALLOWED_EMAIL_DOMAINS, ['gotalok.be', 'hetleercollectief.be']);
+  for (const adres of ['a@gotalok.be', 'C@HetLeercollectief.be']) assert.equal(m.isEmailDomainAllowed(adres), true, adres);
+  for (const adres of ['B@GoMira.be', 'a@gotalok.be.invalid', 'a@xgotalok.be', 'gotalok.be', '', null]) assert.equal(m.isEmailDomainAllowed(adres), false, String(adres));
   const metEnv = await bundel('auth-env', 'contexts/AuthContext.tsx', {
     '(^|/)services/supabase$': SUPABASE_MODULE,
     '(^|/)services/db$': DB_MODULE,
-  }, { VITE_ALLOWED_EMAIL_DOMAINS: ' GoTalok.be , hetleercollectief.be ' });
-  assert.deepEqual(metEnv.ALLOWED_EMAIL_DOMAINS, ['gotalok.be', 'hetleercollectief.be']);
-  assert.equal(metEnv.isEmailDomainAllowed('a@gomira.be'), false, 'de env-lijst wint van de standaardlijst');
+  }, { VITE_ALLOWED_EMAIL_DOMAINS: ' GoTalok.be , hetleercollectief.be , gomira.be ' });
+  assert.deepEqual(metEnv.ALLOWED_EMAIL_DOMAINS, ['gotalok.be', 'hetleercollectief.be', 'gomira.be']);
+  assert.equal(metEnv.isEmailDomainAllowed('a@gomira.be'), true, 'de env-lijst wint van de standaardlijst');
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
