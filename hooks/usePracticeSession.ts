@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { SNEEK_RULES, sneekTokenEarned } from '../constants/sneek';
 import { PracticeSettings, QuizResult, FrayerModelData, SessionSummaryData, SessionTimingData, UserData, WordListProgress, AllUsersData, WordMasteryInfo } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +45,21 @@ export function usePracticeSession({
   const [sessionSummaryData, setSessionSummaryData] = useState<SessionSummaryData | null>(null);
 
   const { user } = useAuth();
+
+  // Een andere (of geen) aangemelde gebruiker: de oefening, de uitslag en de naam van de vorige
+  // leerling vergeten. Anders toont Mijn voortgang op een gedeeld toestel (afmelden, een ander meldt
+  // aan in een tweede tabblad, zonder herladen) nog de gegevens van de vorige leerling (hotfix BV1-02).
+  // Een vernieuwd token houdt dezelfde id: een lopende oefening blijft dan staan.
+  const userId = user?.id ?? null;
+  const vorigeUserId = useRef(userId);
+  useEffect(() => {
+    if (vorigeUserId.current === userId) return;
+    vorigeUserId.current = userId;
+    setCurrentUser(null);
+    setPracticeWords([]);
+    setPracticeSettings(null);
+    setSessionSummaryData(null);
+  }, [userId]);
 
   // --- Starten ---
 

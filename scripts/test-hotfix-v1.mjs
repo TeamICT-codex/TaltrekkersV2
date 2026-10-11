@@ -497,6 +497,66 @@ test('zwakke woorden: zonder woorden gebeurt er niets', async () => {
   R.ontkoppel();
 });
 
+// Gedeeld toestel zonder herladen (nalezing 11/10, M1): de leerling meldt af (of een ander meldt aan in een
+// tweede tabblad, en supabase-js meldt dat aan dit tabblad). Bleef currentUser staan, dan toonde Mijn voortgang
+// nog de gegevens van de vorige leerling (App: activeUserName = currentUser ?? ...).
+const LEERLING_EEN = '00000000-0000-4000-8000-0000000000a1';
+const LEERLING_TWEE = '00000000-0000-4000-8000-0000000000b2';
+
+/** De hook in een component die opnieuw kan tekenen, zoals App bij een nieuwe waarde van useAuth. */
+async function sessieMetAanmelding(id) {
+  const m = await laadSessie();
+  globalThis.__nepAuthWaarde = { user: { id } };
+  globalThis.__nepDb = { saveSessionToSupabase: async () => ({ success: true }), updateWordProgressInSupabase: async () => ({ success: true }) };
+  const R = nieuweMiniReact();
+  globalThis.__miniReact = R;
+  let herteken;
+  R.mount(() => {
+    const [, zet] = R.useState(0);
+    herteken = () => zet(x => x + 1);
+    return m.usePracticeSession({ allUsersData: {}, setUserData: () => {}, onAchievementCheck: async () => null });
+  }, null);
+  const meldAan = async gebruiker => { globalThis.__nepAuthWaarde = { user: gebruiker }; herteken(); await wacht(0); };
+  return { R, meldAan };
+}
+
+test('gedeeld toestel: meldt de leerling af midden in een oefening en meldt een ander aan zonder herladen, dan vergeet de hook de vorige leerling', async () => {
+  const { R, meldAan } = await sessieMetAanmelding(LEERLING_EEN);
+  R.huidig().handlePracticeWeakWords('Test Leerling Een', ['woord1']);
+  await wacht(0);
+  assert.equal(R.huidig().currentUser, 'test leerling een');
+
+  // Een vernieuwd token (TOKEN_REFRESHED): zelfde leerling, nieuw object. De oefening loopt door.
+  await meldAan({ id: LEERLING_EEN });
+  assert.equal(R.huidig().currentUser, 'test leerling een', 'een vernieuwd token stopt een lopende oefening');
+  assert.deepEqual(R.huidig().practiceWords, ['woord1']);
+
+  await meldAan(null); // afgemeld midden in de oefening
+  await meldAan({ id: LEERLING_TWEE }); // aangemeld in een ander tabblad
+  const h = R.huidig();
+  assert.equal(h.currentUser, null, 'de naam van de vorige leerling blijft hangen: Mijn voortgang toont haar gegevens');
+  assert.deepEqual(h.practiceWords, []);
+  assert.equal(h.practiceSettings, null);
+  R.ontkoppel();
+});
+
+test('gedeeld toestel: staat de vorige leerling op de uitslag en meldt een ander meteen aan, dan verdwijnen ook haar naam en uitslag', async () => {
+  const { R, meldAan } = await sessieMetAanmelding(LEERLING_EEN);
+  R.huidig().handlePracticeWeakWords('Test Leerling Een', ['woord1']);
+  await wacht(0);
+  await R.huidig().finishPractice(1, [{ word: 'woord1', correct: true }], [MODEL('woord1')], 'frayer', { studyPhaseSeconds: 5, quizPhaseSeconds: 5 });
+  await wacht(0);
+  assert.ok(R.huidig().sessionSummaryData, 'geen uitslag');
+
+  await meldAan({ id: LEERLING_TWEE }); // de sessie in een ander tabblad vervangen, zonder afmelden ertussen
+  const h = R.huidig();
+  assert.equal(h.currentUser, null, 'de naam van de vorige leerling blijft hangen');
+  assert.equal(h.sessionSummaryData, null, 'de uitslag van de vorige leerling blijft staan');
+  assert.deepEqual(h.practiceWords, []);
+  assert.equal(h.practiceSettings, null);
+  R.ontkoppel();
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // 4. Gedeeld toestel: "Mijn voortgang" krijgt enkel de gegevens van de aangemelde leerling (BV1-02),
 //    en App geeft de aangemelde leerling mee aan "Oefen zwakke woorden" (BV1-01)
