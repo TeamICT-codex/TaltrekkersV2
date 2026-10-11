@@ -28,6 +28,33 @@ export interface NieuwsBlok {
 
 export const NIEUWS: NieuwsBlok[] = [
     {
+        // Datum = dag van livegang van de hotfix van 11 oktober.
+        datum: '2026-10-11',
+        titel: 'Afmelden, zwakke woorden en Mijn voortgang',
+        items: [
+            {
+                soort: 'opgelost',
+                tekst: '"Oefen zwakke woorden" bewaart je oefening weer: je krijgt je uitslag en je XP, en je leerkracht ziet de oefening.',
+            },
+            {
+                soort: 'opgelost',
+                tekst: 'Op een gedeeld toestel toont "Mijn voortgang" enkel nog jouw eigen gegevens, niet die van wie voor jou werkte.',
+            },
+            {
+                soort: 'opgelost',
+                tekst: 'Afmelden werkt ook als het netwerk hapert. Lukt het bij de server niet, dan zegt de app dat, en op dit toestel ben je toch afgemeld.',
+            },
+            {
+                soort: 'opgelost',
+                tekst: 'Het leerkrachtendashboard viel weg als er een leerling zonder e-mailadres in de klas zat. Die leerling staat er nu gewoon bij.',
+            },
+            {
+                soort: 'verbeterd',
+                tekst: 'Meld je je aan met een adres dat niet bij een deelnemende school hoort, dan krijg je een duidelijke melding in plaats van een leeg scherm.',
+            },
+        ],
+    },
+    {
         // Datum = dag van livegang van de juiste oefentijd en het vangnet; pas aan bij het live zetten.
         datum: '2026-09-30',
         titel: 'Juiste oefentijd en vlottere updates',
