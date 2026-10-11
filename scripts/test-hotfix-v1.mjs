@@ -425,3 +425,70 @@ test('leeg scherm: lukt de afmelding van een geweigerd account niet, dan toch ge
   assert.equal(s.omgeving.sessieInOpslag(), false, 'de sessie van het geweigerde account blijft op het toestel');
   stop(s);
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 3. "Oefen zwakke woorden" bewaart de oefening weer (BV1-01)
+// ═════════════════════════════════════════════════════════════════════════════
+let sessieModule = null;
+async function laadSessie() {
+  sessieModule ??= await bundel('sessie', 'hooks/usePracticeSession.ts', {
+    '(^|/)contexts/AuthContext$': 'export const useAuth = () => globalThis.__nepAuthWaarde ?? { user: null };',
+    '(^|/)services/db$': DB_MODULE,
+  });
+  return sessieModule;
+}
+
+const MODEL = woord => ({ definitie: `Uitleg bij ${woord}.`, voorbeelden: [{ zin: `Een zin met ${woord}.`, gebruiktWoord: woord }], synoniemen: [], antoniemen: [] });
+
+test('zwakke woorden: de oefening wordt bewaard voor de aangemelde leerling, met dubbele XP, ook in de databank', async () => {
+  const m = await laadSessie();
+  const lokaal = [];
+  const naarDb = [];
+  const woordVoortgang = [];
+  globalThis.__nepAuthWaarde = { user: { id: '00000000-0000-4000-8000-00000000c001' } };
+  globalThis.__nepDb = {
+    saveSessionToSupabase: async rij => { naarDb.push(rij); return { success: true }; },
+    updateWordProgressInSupabase: async (...a) => { woordVoortgang.push(a); return { success: true }; },
+  };
+  const R = nieuweMiniReact();
+  globalThis.__miniReact = R;
+  const opties = { allUsersData: {}, setUserData: (naam, data) => lokaal.push([naam, data]), onAchievementCheck: async () => null };
+  R.mount(() => m.usePracticeSession(opties), null);
+
+  // Zoals App.handlePracticeWeakWordsNav: de naam van de aangemelde leerling en de woorden.
+  R.huidig().handlePracticeWeakWords(' Test Leerling ', ['woord1', 'woord2']);
+  await wacht(0);
+  const h = R.huidig();
+  assert.equal(h.currentUser, 'test leerling', 'currentUser is niet gezet: finishPractice stopt dan stil');
+  assert.deepEqual(h.practiceWords, ['woord1', 'woord2']);
+  assert.equal(h.practiceSettings.customFileName, 'weak-words');
+
+  await h.finishPractice(2, [{ word: 'woord1', correct: true }, { word: 'woord2', correct: true }], [MODEL('woord1'), MODEL('woord2')], 'frayer', { studyPhaseSeconds: 10, quizPhaseSeconds: 20 });
+  await wacht(0);
+  assert.equal(lokaal.length, 1, 'niets lokaal bewaard');
+  assert.equal(lokaal[0][0], 'test leerling');
+  assert.equal(lokaal[0][1].points, 4, '2 juist x 2 (dubbele XP)');
+  assert.equal(lokaal[0][1].sessionHistory.length, 1);
+  const samenvatting = R.huidig().sessionSummaryData;
+  assert.ok(samenvatting, 'geen uitslag: de app springt naar het startscherm');
+  assert.equal(samenvatting.weakWordsBonus, true);
+  assert.equal(samenvatting.earnedXP, 4);
+  assert.equal(naarDb.length, 1, 'geen rij in practice_sessions');
+  assert.equal(naarDb[0].userId, '00000000-0000-4000-8000-00000000c001');
+  assert.equal(naarDb[0].context, 'weak-words');
+  assert.equal(naarDb[0].score, 2);
+  assert.equal(woordVoortgang.length, 1);
+  R.ontkoppel();
+});
+
+test('zwakke woorden: zonder woorden gebeurt er niets', async () => {
+  const m = await laadSessie();
+  const R = nieuweMiniReact();
+  globalThis.__miniReact = R;
+  R.mount(() => m.usePracticeSession({ allUsersData: {}, setUserData: () => {}, onAchievementCheck: async () => null }), null);
+  R.huidig().handlePracticeWeakWords('test leerling', []);
+  await wacht(0);
+  assert.equal(R.huidig().currentUser, null);
+  assert.equal(R.huidig().practiceSettings, null);
+  R.ontkoppel();
+});

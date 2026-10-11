@@ -79,8 +79,11 @@ export function usePracticeSession({
     return true;
   }, [allUsersData]);
 
-  const handlePracticeWeakWords = useCallback((words: string[]) => {
+  // userName = de aangemelde leerling. Zonder currentUser stopte finishPractice stil:
+  // geen uitslag, geen XP, niets in de databank (hotfix BV1-01).
+  const handlePracticeWeakWords = useCallback((userName: string, words: string[]) => {
     if (words.length === 0) return;
+    setCurrentUser(userName.toLowerCase().trim());
     const settings: PracticeSettings = {
       wordsPerSession: words.length,
       showSynonymsAntonyms: false,

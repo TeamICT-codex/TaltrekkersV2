@@ -135,11 +135,6 @@ const App: React.FC = () => {
     setAppState(AppState.Welcome);
   }, [finishStoryChallenge]);
 
-  const handlePracticeWeakWordsNav = useCallback((words: string[]) => {
-    handlePracticeWeakWords(words);
-    setAppState(AppState.Practice);
-  }, [handlePracticeWeakWords]);
-
   const handleCloseSummaryNav = useCallback((destination: 'welcome' | 'dashboard') => {
     handleCloseSummary();
     setAppState(destination === 'dashboard' ? AppState.Dashboard : AppState.Welcome);
@@ -149,6 +144,14 @@ const App: React.FC = () => {
   // daarbuiten kijken we naar de geselecteerde leerling (uit AuthContext, persistent
   // in localStorage). Zo blijven tokens ook in de Header zichtbaar buiten oefensessies.
   const activeUserName = currentUser ?? selectedStudent?.name?.toLowerCase().trim();
+
+  // Altijd voor de aangemelde leerling (niet voor de getoonde rij): de databank
+  // bewaart toch op user.id (hotfix BV1-01).
+  const handlePracticeWeakWordsNav = useCallback((words: string[]) => {
+    if (!activeUserName) return;
+    handlePracticeWeakWords(activeUserName, words);
+    setAppState(AppState.Practice);
+  }, [handlePracticeWeakWords, activeUserName]);
 
   // Reward token spend — trekt 1 token af van het juiste type op de actieve user.
   const handleSpendToken = useCallback((mode: 'snake' | 'dragon') => {
