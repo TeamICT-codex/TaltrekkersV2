@@ -153,6 +153,17 @@ const App: React.FC = () => {
     setAppState(AppState.Practice);
   }, [handlePracticeWeakWords, activeUserName]);
 
+  // Op een gedeeld toestel staan in localStorage de gegevens van elke leerling die
+  // er oefende. Is er iemand aangemeld, dan krijgt "Mijn voortgang" enkel diens eigen
+  // gegevens: de rijen van anderen verdwijnen en de wisknop kan enkel nog de eigen
+  // gegevens wissen (hotfix BV1-02).
+  const dashboardData = useMemo(
+    () => (user
+      ? (activeUserName && allUsersData[activeUserName] ? { [activeUserName]: allUsersData[activeUserName] } : {})
+      : allUsersData),
+    [user, activeUserName, allUsersData],
+  );
+
   // Reward token spend — trekt 1 token af van het juiste type op de actieve user.
   const handleSpendToken = useCallback((mode: 'snake' | 'dragon') => {
     if (!activeUserName) return;
@@ -332,7 +343,7 @@ const App: React.FC = () => {
       case AppState.Dashboard:
         return (
           <Dashboard
-            allUsersData={allUsersData}
+            allUsersData={dashboardData}
             onBack={showWelcome}
             onDeleteSession={deleteSession}
             onDeleteUserData={deleteUserData}

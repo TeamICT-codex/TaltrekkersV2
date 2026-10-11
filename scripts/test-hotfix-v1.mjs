@@ -125,7 +125,9 @@ export const useMemo = (...a) => R().useMemo(...a);
 export const useCallback = (...a) => R().useCallback(...a);
 export const useEffect = (...a) => R().useEffect(...a);
 export const Fragment = 'Fragment';
-export default { createContext, useContext, useState, useRef, useMemo, useCallback, useEffect, Fragment };`;
+export const Suspense = 'Suspense';
+export const lazy = laad => ({ __lazy: laad });
+export default { createContext, useContext, useState, useRef, useMemo, useCallback, useEffect, Fragment, Suspense, lazy };`;
 const JSX_MODULE = `
 export const jsx = (type, props) => ({ type, props });
 export const jsxs = jsx;
@@ -137,7 +139,7 @@ export const Fragment = 'Fragment';`;
  * Bundelt een bronbestand van de app met de kleine React en de gegeven vervangers
  * ({ regex op het importpad: broncode }) en import.meta.env (DEV false + env). Geeft de geladen module terug.
  */
-async function bundel(naam, bronPad, vervangers = {}, env = {}) {
+async function bundel(naam, bronPad, vervangers = {}, env = {}, metStandaard = false) {
   const ingang = join(ROOT, bronPad).replace(/\\/g, '/');
   const uit = join(UIT, `${naam}.mjs`);
   const virtueel = [
@@ -146,7 +148,7 @@ async function bundel(naam, bronPad, vervangers = {}, env = {}) {
     ...Object.entries(vervangers).map(([bron, code]) => [new RegExp(bron), code]),
   ];
   await esbuild.build({
-    stdin: { contents: `export * from ${JSON.stringify(ingang)};`, resolveDir: ROOT, loader: 'js' },
+    stdin: { contents: `export * from ${JSON.stringify(ingang)};${metStandaard ? ` export { default } from ${JSON.stringify(ingang)};` : ''}`, resolveDir: ROOT, loader: 'js' },
     bundle: true,
     format: 'esm',
     platform: 'node',
@@ -490,5 +492,110 @@ test('zwakke woorden: zonder woorden gebeurt er niets', async () => {
   await wacht(0);
   assert.equal(R.huidig().currentUser, null);
   assert.equal(R.huidig().practiceSettings, null);
+  R.ontkoppel();
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 4. Gedeeld toestel: "Mijn voortgang" krijgt enkel de gegevens van de aangemelde leerling (BV1-02),
+//    en App geeft de aangemelde leerling mee aan "Oefen zwakke woorden" (BV1-01)
+// ═════════════════════════════════════════════════════════════════════════════
+// De echte App.tsx; elke relatieve import (behalve ./types) is een vervanger waarvan elke export
+// globalThis.__appStubs aanroept. Componenten zijn lege functies met hun eigen naam.
+const bronVan = rel => (BRON
+  ? execFileSync('git', ['show', `${BRON}:${rel}`], { cwd: ROOT, encoding: 'utf8' })
+  : readFileSync(join(ROOT, rel), 'utf8'));
+
+function appVervangers() {
+  const bron = bronVan('App.tsx');
+  const perPad = new Map();
+  const voegToe = (pad, naam) => { if (!perPad.has(pad)) perPad.set(pad, new Set()); perPad.get(pad).add(naam); };
+  for (const m of bron.matchAll(/^import\s+(type\s+)?([^;]*?)\s+from\s+'([^']+)';/gm)) {
+    const [, enkelType, deel, pad] = m;
+    if (enkelType || !pad.startsWith('.') || pad === './types') continue;
+    if (/^\w+/.test(deel.trim())) voegToe(pad, 'default');
+    for (const n of (/\{([^}]*)\}/.exec(deel)?.[1] ?? '').split(',').map(s => s.trim()).filter(Boolean)) {
+      if (!n.startsWith('type ')) voegToe(pad, n.split(/\s+as\s+/)[0]);
+    }
+  }
+  for (const m of bron.matchAll(/import\('(\.[^']+)'\)/g)) voegToe(m[1], 'default');
+  const vervangers = {};
+  for (const [pad, namen] of perPad) {
+    const naam = pad.split('/').pop().replace(/\W/g, '');
+    const code = [...namen].map(n => (n === 'default'
+      ? `export default function ${naam}() { return null; }`
+      : `export const ${n} = (...a) => (globalThis.__appStubs[${JSON.stringify(n)}] ?? (() => null))(...a);`)).join('\n');
+    vervangers[`^${pad.replace(/[.*+?^${}()|[\]\/]/g, '\$&')}$`] = code;
+  }
+  return vervangers;
+}
+
+let appModule = null;
+const laadApp = async () => (appModule ??= await bundel('app', 'App.tsx', appVervangers(), {}, true));
+
+function vindAlle(knoop, past, uit = []) {
+  if (Array.isArray(knoop)) { for (const k of knoop) vindAlle(k, past, uit); return uit; }
+  if (!knoop || typeof knoop !== 'object') return uit;
+  if (past(knoop)) uit.push(knoop);
+  if (knoop.props) vindAlle(knoop.props.children, past, uit);
+  return uit;
+}
+
+const LEEG = { masteredWords: 0, totalScore: 0, sessionHistory: [], learnedWords: {}, streak: 0, lastPracticeDate: null, points: 0, avatarId: 'default', wordListProgress: {} };
+
+/** App opstarten als aangemelde leerling op een toestel waar ook een klasgenoot oefende, en "Mijn voortgang" openen. */
+async function openMijnVoortgang(naamAangemeld) {
+  const m = await laadApp();
+  const oproepen = { zwakkeWoorden: [] };
+  const allUsersData = { 'test leerling een': { ...LEEG, points: 11 }, 'test leerling twee': { ...LEEG, points: 22 } };
+  const auth = { user: { id: '00000000-0000-4000-8000-00000000d002' }, selectedStudent: { name: naamAangemeld }, role: 'student', finaliteit: 'AF', jaargang: '5e' };
+  const sessie = {
+    currentUser: null, practiceWords: [], practiceSettings: null, sessionSummaryData: null,
+    startPractice() {}, finishPractice() {}, startStoryChallenge() {}, finishStoryChallenge() {}, handleCloseSummary() {},
+    handlePracticeWeakWords: (...a) => oproepen.zwakkeWoorden.push(a),
+  };
+  const gegevens = { allUsersData, setUserData() {}, updateUser() {}, deleteSession() {}, deleteUserData() {}, updateAvatar() {} };
+  globalThis.__appStubs = {
+    useUserData: () => gegevens,
+    usePracticeSession: () => sessie,
+    useAuth: () => auth,
+    useAchievements: () => ({ celebration: null, checkAchievements: async () => null, dismissCelebration() {} }),
+    useProfileStatsCloudSync: () => ({ welcomeBonusJustGranted: false, dismissWelcomeBonus() {} }),
+    buildSneekLaunchData: () => ({}),
+    getAvatarById: () => ({ emoji: '*', name: 'Avatar' }),
+    prepareResumeList: () => null,
+  };
+  const R = nieuweMiniReact();
+  globalThis.__miniReact = R;
+  R.mount(m.default, {});
+  await wacht(0);
+  const welkom = vindAlle(R.huidig(), k => k.type?.name === 'Welcome');
+  assert.equal(welkom.length, 1, 'het startscherm verschijnt niet');
+  welkom[0].props.onShowDashboard();
+  await wacht(0);
+  const lazy = vindAlle(R.huidig(), k => typeof k.type?.__lazy === 'function');
+  const namen = await Promise.all(lazy.map(async k => (await k.type.__lazy()).default.name));
+  const dashboard = lazy[namen.indexOf('Dashboard')];
+  assert.ok(dashboard, `Mijn voortgang verschijnt niet (${namen.join(', ')})`);
+  return { R, dashboard, allUsersData, oproepen };
+}
+
+test('gedeeld toestel: Mijn voortgang krijgt enkel de gegevens van de aangemelde leerling', async () => {
+  const { R, dashboard, allUsersData } = await openMijnVoortgang('Test Leerling Twee');
+  assert.deepEqual(Object.keys(dashboard.props.allUsersData), ['test leerling twee'], 'de rij van een klasgenoot is te zien (en te wissen)');
+  assert.equal(dashboard.props.allUsersData['test leerling twee'], allUsersData['test leerling twee']);
+  R.ontkoppel();
+});
+
+test('gedeeld toestel: zonder eigen gegevens op dit toestel een leeg overzicht, niet dat van een ander', async () => {
+  const { R, dashboard } = await openMijnVoortgang('Test Leerling Drie');
+  assert.deepEqual(dashboard.props.allUsersData, {});
+  R.ontkoppel();
+});
+
+test('zwakke woorden vanuit Mijn voortgang: App geeft de aangemelde leerling mee', async () => {
+  const { R, dashboard, oproepen } = await openMijnVoortgang('Test Leerling Twee');
+  dashboard.props.onPracticeWeakWords(['woord1', 'woord2']);
+  await wacht(0);
+  assert.deepEqual(oproepen.zwakkeWoorden, [['test leerling twee', ['woord1', 'woord2']]]);
   R.ontkoppel();
 });
