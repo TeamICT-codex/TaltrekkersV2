@@ -17,13 +17,14 @@ export const SELECTED_STUDENT_KEY = 'taltrekkers_selected_student';
 // @hetleercollectief.be. Client-side vangnet — definitieve tenant-lock
 // gebeurt server-side in Supabase Dashboard → Authentication → Providers
 // → Azure (tenant URL = login.microsoftonline.com/{TENANT_ID}/v2.0).
+// GO! Mira (gomira.be) heeft geen Microsoft-tenant: daar enkel de e-maillink.
 //
 // Override via env: VITE_ALLOWED_EMAIL_DOMAINS=domein1,domein2,...
 // Legacy: VITE_ALLOWED_EMAIL_DOMAIN (singular) blijft werken voor backwards-compat.
 export const ALLOWED_EMAIL_DOMAINS: string[] = (
     (import.meta.env.VITE_ALLOWED_EMAIL_DOMAINS as string | undefined)
     || (import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN as string | undefined)
-    || 'gotalok.be,hetleercollectief.be'
+    || 'gotalok.be,hetleercollectief.be,gomira.be'
 ).toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
 
 /** True als email eindigt op één van de toegestane domeinen. */
