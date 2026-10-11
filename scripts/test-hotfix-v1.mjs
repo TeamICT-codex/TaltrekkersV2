@@ -829,10 +829,38 @@ test('leerkrachtdashboard: zoeken met leerlingen zonder adres crasht niet', asyn
 // Nu tonen ze dan geen jaren. Tegen de code zonder M3: HOTFIX_BRON=<commit> node scripts/test-hotfix-v1.mjs.
 const AUTH_NEP = 'export const useAuth = () => globalThis.__nepAuthWaarde ?? {};';
 
+const M3_BESTANDEN = ['components/PracticeSetup.tsx', 'components/KlasSettingsModal.tsx'];
+// Een opzoeking van de jaren waarop meteen iets gebeurt (.map, .includes, .length, [0], ...) zonder `?? []` of `?.`, in
+// beide schrijfwijzen (JAARGANGEN_PER_FINALITEIT in KlasSettingsModal, jaargangenPerFinaliteit in PracticeSetup) en met
+// elke sleutel (ook profile.finaliteit). Nalezing integratieronde: de eerste versie zag enkel `[woord].map(` en `.includes(`.
+const M3_ZONDER_TERUGVAL = /per_?finaliteit\[[^\]]+\]\s*[.[]/i;
+
 test('M3: elke opzoeking van de jaren per finaliteit in versie 1 heeft een terugval (bewaker op de bron)', () => {
-  for (const rel of ['components/PracticeSetup.tsx', 'components/KlasSettingsModal.tsx']) {
-    // Beide schrijfwijzen: JAARGANGEN_PER_FINALITEIT[x] (KlasSettingsModal) en jaargangenPerFinaliteit[x] (PracticeSetup).
-    assert.doesNotMatch(bronVan(rel), /per_?finaliteit\[\w+\]\.(map|includes)\(/i, `${rel}: zonder ?? [] crasht versie 1 bij E of DO`);
+  // De bewaker zelf: vindt elke vorm zonder terugval, en laat de terugval en de declaratie door.
+  for (const fout of ['jaargangenPerFinaliteit[selectedFinaliteit].map(j => j)', 'JAARGANGEN_PER_FINALITEIT[f].includes(x)',
+    'JAARGANGEN_PER_FINALITEIT[profile.finaliteit].map(', 'JAARGANGEN_PER_FINALITEIT[f].length', 'jaargangenPerFinaliteit[f][0]',
+    'JAARGANGEN_PER_FINALITEIT[f] .filter(']) {
+    assert.match(fout, M3_ZONDER_TERUGVAL, `de bewaker mist: ${fout}`);
+  }
+  for (const goed of ['(jaargangenPerFinaliteit[selectedFinaliteit] ?? []).map(', '!(JAARGANGEN_PER_FINALITEIT[f] ?? []).includes(j)',
+    'JAARGANGEN_PER_FINALITEIT[f]?.includes(x)', 'const JAARGANGEN_PER_FINALITEIT: Record<Finaliteit, Jaargang[]> = {']) {
+    assert.doesNotMatch(goed, M3_ZONDER_TERUGVAL, `de bewaker weigert ten onrechte: ${goed}`);
+  }
+  for (const rel of M3_BESTANDEN) {
+    assert.doesNotMatch(bronVan(rel), M3_ZONDER_TERUGVAL, `${rel}: zonder ?? [] crasht versie 1 bij E of DO`);
+  }
+});
+
+test('M3: PracticeSetup en KlasSettingsModal verschillen van main enkel in de terugval ?? [] (test:client laat het hele bestand toe)', () => {
+  // De toegelaten lijst van test:client werkt per bestand. Dit legt vast dat er in deze twee bestanden niets anders
+  // verandert dan M3. Staat M3 op main, dan zijn ze gewoon gelijk.
+  const zonderTerugval = bron => bron.replace(/\r\n/g, '\n').replace(/\((\w*per_?finaliteit\[\w+\]) \?\? \[\]\)/gi, '$1').split('\n');
+  for (const rel of M3_BESTANDEN) {
+    const hier = zonderTerugval(bronVan(rel));
+    const opMain = zonderTerugval(execFileSync('git', ['show', `main:${rel}`], { cwd: ROOT, encoding: 'utf8' }));
+    const i = hier.findIndex((regel, n) => regel !== opMain[n]);
+    const eerste = i !== -1 ? i : hier.length !== opMain.length ? Math.min(hier.length, opMain.length) : -1;
+    assert.equal(eerste, -1, `${rel}: verschilt van main buiten de terugval ?? [] (eerst op r. ${eerste + 1})`);
   }
 });
 
